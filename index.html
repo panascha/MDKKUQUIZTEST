@@ -1610,7 +1610,7 @@
                         }
 
                         // 3. Fetch Questions (ส่ง subject ไปด้วย เพื่อกรองโจทย์)
-                        return fetch(`${APPSCRIPT_URL}?action=getQuestions&subject=${subjectParam}`);
+                        return fetch(`${APPSCRIPT_URL}?action=getQuestions&subject`);
                     })
                     .then(res => res.json())
                     .then(questions => {
