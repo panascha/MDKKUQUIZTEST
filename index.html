@@ -1,0 +1,3307 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDKKUQUIZ (ver 2.0)</title>
+
+    <!-- External Libraries -->
+    <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+    <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/th-sarabun-new-4" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- jsPDF and Thai Font for PDF Exports -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CXPE1MX3HS"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-CXPE1MX3HS');
+    </script>
+</head>
+
+<style>
+    /* --- CSS Variables for Easy Theming --- */
+    :root {
+        --font-primary: 'TH Sarabun New', 'Roboto', sans-serif;
+        --color-background: #f4f4f4;
+        --color-surface: #ffffff;
+        --color-text: #333;
+        --color-primary: #1a73e8;
+        --color-primary-hover: #1765c8;
+        --color-dark: #212529;
+        --color-dark-hover: #343a40;
+        --color-light: #e9ecef;
+        --color-light-hover: #ced4da;
+        --color-correct: #198754;
+        --color-correct-bg: #d1e7dd;
+        --color-wrong: #dc3545;
+        --color-wrong-bg: #f8d7da;
+        --shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        --border-radius: 8px;
+        /* NEW Colors for Toggle Buttons */
+        --color-toggle-default: #f8f9fa;
+        --color-toggle-hover: #e9ecef;
+        --color-toggle-mcq: #28a745;
+        --color-toggle-ai: #6f42c1;
+    }
+
+    /* Loading Spinner */
+    .loading-spinner {
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid var(--color-primary);
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* --- Base & Body Styles --- */
+    html {
+        font-size: 16px;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        font-family: var(--font-primary);
+        font-size: 20px;
+        font-weight: 700;
+        background-color: var(--color-background);
+        color: var(--color-text);
+        margin: 0;
+        padding: 2rem 1rem;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: 100vh;
+        margin: 0 auto;
+        margin-bottom: 50px;
+    }
+
+    /* --- Main Container Layout --- */
+    .container {
+        width: 100%;
+        max-width: 1000px;
+        background: var(--color-surface);
+        padding: 1.5rem;
+        padding-bottom: 3rem;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+    }
+
+    /* -------------------- NEW: Topic Selection Container (Replaces checkbox-container) -------------------- */
+    .selection-container {
+        width: 100%;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: var(--border-radius);
+        background-color: var(--color-surface);
+    }
+
+    .selection-container h2 {
+        font-size: 1.5rem;
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        color: var(--color-primary);
+        font-weight: 700;
+        text-align: center;
+    }
+
+    /* -------------------- NEW: Status Bar for Selected Topics -------------------- */
+    #selected-topics-status {
+        margin-top: 15px;
+        margin-bottom: 20px;
+        padding: 10px 15px;
+        border: 1px solid var(--color-primary);
+        border-radius: var(--border-radius);
+        background-color: #e3f2fd;
+        /* Light blue background */
+        min-height: 40px;
+        /* Ensure visibility even when empty */
+        align-items: center;
+        justify-content: flex-start;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .status-topic-button {
+        padding: 6px 10px;
+        border: 1px solid var(--color-primary);
+        border-radius: 20px;
+        background-color: var(--color-primary);
+        color: white;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        font-size: 1.1rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        user-select: none;
+    }
+
+    .status-topic-button:hover {
+        background-color: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+    }
+
+    .status-topic-button i {
+        font-size: 0.8em;
+        margin-left: 3px;
+    }
+
+    /* -------------------- END Status Bar Styles -------------------- */
+
+
+    /* -------------------- NEW: Accordion Styles -------------------- */
+    .accordion-group {
+        border: 1px solid #ddd;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        background-color: #fff;
+        padding: 0;
+    }
+
+    .accordion-header {
+        font-weight: bold;
+        font-size: 1.4rem;
+        padding: 15px 20px;
+        color: var(--color-dark);
+        background-color: var(--color-light);
+        border-radius: 5px;
+        cursor: pointer;
+        list-style: none;
+        transition: background-color 0.2s;
+        display: flex;
+        align-items: center;
+    }
+
+    .accordion-header::before {
+        content: '\f055';
+        /* FontAwesome Plus Circle */
+        font-family: 'Font Awesome 6 Free';
+        font-weight: 900;
+        margin-right: 10px;
+        font-size: 1.1em;
+        color: var(--color-primary);
+        transition: transform 0.2s;
+    }
+
+    .accordion-group[open]>.accordion-header::before {
+        content: '\f056';
+        /* FontAwesome Minus Circle */
+        color: var(--color-wrong);
+    }
+
+    .accordion-header:hover {
+        background-color: var(--color-light-hover);
+    }
+
+    .accordion-group>.button-grid {
+        padding: 15px 20px 15px 20px;
+        border-top: 1px solid #eee;
+    }
+
+    /* -------------------- NEW: Toggle Buttons Styles -------------------- */
+    .button-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-start;
+    }
+
+    .toggle-button {
+        padding: 8px 15px;
+        border: 2px solid #ced4da;
+        border-radius: 25px;
+        background-color: var(--color-toggle-default);
+        color: var(--color-text);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 1.2rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .toggle-button:hover {
+        background-color: var(--color-toggle-hover);
+        border-color: #adb5bd;
+    }
+
+    /* สไตล์เมื่อปุ่มถูกเลือก */
+    input[type="checkbox"]:checked+.toggle-button {
+        background-color: var(--color-primary);
+        /* สีหลักเมื่อถูกเลือก */
+        color: white;
+        border-color: var(--color-primary);
+        box-shadow: 0 2px 5px rgba(26, 115, 232, 0.3);
+    }
+
+    /* เน้นสีสำหรับกลุ่ม MCQ */
+    .accordion-group:nth-of-type(n+2):nth-of-type(-n+5) input[type="checkbox"]:checked+.toggle-button {
+        background-color: var(--color-toggle-mcq);
+        /* สีเขียวสำหรับ MCQ */
+        border-color: var(--color-toggle-mcq);
+    }
+
+    /* เน้นสีสำหรับกลุ่ม AI Topics */
+    .accordion-group:nth-of-type(6) input[type="checkbox"]:checked+.toggle-button {
+        background-color: var(--color-toggle-ai);
+        /* สีม่วงสำหรับ AI Topics */
+        border-color: var(--color-toggle-ai);
+    }
+
+    /* --- Main Quiz Area --- */
+    #quiz-container {
+        width: 95%;
+        max-width: 900px;
+        padding: 2rem;
+        border: 1px solid #dee2e6;
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+
+    #quiz-container h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    /* --- Topic/Question Text - BIGGER & BOLDER --- */
+    #question {
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        font-size: clamp(1.8rem, 4vw, 2rem);
+        line-height: 1.3;
+        color: #000;
+    }
+
+    #image-container-div {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        width: 80%;
+        max-width: 600px;
+        height: 400px;
+        overflow: hidden;
+        position: relative;
+        border: 1px solid #ccc;
+        background-color: #f9f9f9;
+    }
+
+    #image-container-div img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .img-nav-btn {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.2rem;
+        z-index: 10;
+        transition: background-color 0.2s;
+    }
+
+    .img-nav-btn:hover {
+        background-color: rgba(0, 0, 0, 0.8);
+    }
+
+    #prev-img-btn {
+        left: 10px;
+    }
+
+    #next-img-btn {
+        right: 10px;
+    }
+
+    #image-counter {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        display: none;
+        z-index: 10;
+    }
+
+    /* --- Choice Buttons - CENTERED & RESPONSIVE --- */
+    #choices {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1rem;
+        width: 50%;
+        margin-bottom: 1.5rem;
+        margin-top: auto;
+    }
+
+    #choices button {
+        flex: 1 1 250px;
+        max-width: 450px;
+
+        padding: 0.75rem 1rem;
+        font-family: var(--font-primary);
+        font-size: 1.5rem;
+        font-weight: 700;
+        min-height: 60px;
+
+        background-color: var(--color-light);
+        color: var(--color-text);
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #choices button img {
+        max-width: 100%;
+        max-height: 150px;
+        width: auto;
+        object-fit: contain;
+        border-radius: 4px;
+        pointer-events: none;
+    }
+
+    #choices button:hover {
+        background-color: var(--color-light-hover);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        transform: translateY(-2px);
+    }
+
+    #choices button.selected {
+        background-color: var(--color-primary);
+        color: white;
+    }
+
+    #choices button.correct {
+        background-color: var(--color-correct);
+        color: white;
+    }
+
+    #choices button.wrong {
+        background-color: var(--color-wrong);
+        color: white;
+    }
+
+    /* --- General Button Styles --- */
+    .controls-container {
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #ddd;
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .nav-container {
+        margin-top: 1rem;
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .quiz-button {
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-family: var(--font-primary);
+        font-size: 1.2rem;
+        font-weight: 700;
+        transition: all 0.2s ease-in-out;
+    }
+
+    .quiz-button:hover {
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        transform: translateY(-2px);
+    }
+
+    .btn-dark {
+        background-color: var(--color-dark);
+    }
+
+    .btn-dark:hover {
+        background-color: var(--color-dark-hover);
+    }
+
+    .btn-light {
+        background-color: #6c757d;
+        /* Custom darker light for controls */
+        color: white;
+    }
+
+    .btn-light:hover {
+        background-color: #5a6268;
+    }
+
+    #save {
+        background-color: #1a73e8;
+    }
+
+    #save:hover {
+        background-color: #1765c8;
+    }
+
+    /* --- Export/Import Button Styles --- */
+    .btn-export {
+        background-color: #28a745;
+    }
+
+    .btn-export:hover {
+        background-color: #218838;
+    }
+
+    .btn-import {
+        background-color: #fd7e14;
+    }
+
+    .btn-import:hover {
+        background-color: #e36a00;
+    }
+
+
+    #toggle-random-btn {
+        background-color: #e8710a;
+    }
+
+    #toggle-random-btn:hover {
+        background-color: #d16509;
+    }
+
+    #report {
+        background: linear-gradient(to right, #FFB6B6, #F7FFB6, #B6FFB6, #B6FFFF, #B6B6FF, #FFB6FF);
+        color: black;
+        font-weight: 700;
+        margin-top: 1rem;
+    }
+
+    #report:hover {
+        transform: scale(1.05) translateY(-2px);
+    }
+
+    #submit-btn {
+        width: 100%;
+        max-width: 400px;
+    }
+
+    /* --- Feedback & Navigation --- */
+    #feedback {
+        margin: 1.5rem 0;
+        font-weight: bold;
+        font-size: 1.75rem;
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        width: 100%;
+        max-width: 800px;
+        line-height: 1.4;
+    }
+
+    #feedback.correct {
+        color: var(--color-correct);
+        background-color: var(--color-correct-bg);
+    }
+
+    #feedback.incorrect {
+        color: var(--color-wrong);
+        background-color: var(--color-wrong-bg);
+    }
+
+    .nav-container {
+        justify-content: space-between;
+        max-width: 800px;
+    }
+
+    #prev-question,
+    #next-question {
+        margin: auto;
+        width: 200px;
+        padding: 0.75rem 1.5rem;
+        font-size: 1.2rem;
+    }
+
+    /* --- Modal Styles --- */
+    .modal-card {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        background-color: var(--color-surface);
+        border-radius: var(--border-radius);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        width: 90%;
+        max-width: 500px;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .modal-body {
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .modal-title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 1rem;
+    }
+
+    .modal-section {
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: var(--border-radius);
+        width: 100%;
+        box-sizing: border-box;
+        /* สำคัญสำหรับ Padding/Border */
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        /* เพิ่มเงาเล็กน้อย */
+    }
+
+    /* =========================================
+       MODAL VOTE: MODERN & SMOOTH STYLE
+       ========================================= */
+
+    /* 1. ปรับขนาด Text และ Layout หลัก */
+    #vote-category-modal .modal-body {
+        padding: 2rem !important;
+        /* เพิ่มพื้นที่ขอบ */
+    }
+
+    #vote-category-modal .modal-title {
+        font-size: 2rem !important;
+        /* หัวข้อใหญ่ขึ้น */
+        font-weight: 800;
+        letter-spacing: -0.5px;
+    }
+
+    #vote-category-modal p.small-text {
+        font-size: 1.2rem;
+        /* คำอธิบายใหญ่อ่านง่าย */
+        color: #6c757d;
+        margin-bottom: 1.5rem;
+    }
+
+    /* 2. กล่อง Preview โจทย์ */
+    #vote-question-preview {
+        font-size: 1.25rem !important;
+        /* ตัวหนังสือโจทย์ใหญ่ */
+        line-height: 1.6;
+        color: #2c3e50;
+        background: #f8f9fa;
+        border: none !important;
+        border-left: 6px solid var(--color-primary) !important;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        padding: 20px !important;
+        transition: transform 0.3s ease;
+    }
+
+    #vote-question-preview:hover {
+        transform: scale(1.01);
+        /* ขยายเล็กน้อยเมื่อชี้ */
+    }
+
+    /* 3. Container ของ Badge */
+    .topics-badge-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        /* ระยะห่างระหว่างก้อน */
+        min-height: 40px;
+        align-items: center;
+    }
+
+    /* 4. ตัว Badge (Topic) - หัวใจหลัก */
+    .topic-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 20px;
+        /* อ้วนขึ้น */
+        border-radius: 50px;
+        /* กลมมนเป็นแคปซูล */
+        font-size: 1.15rem;
+        /* ตัวหนังสือใหญ่ */
+        font-weight: 600;
+        letter-spacing: 0.3px;
+
+        /* Smooth Animation */
+        transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* 4.1 สไตล์ Approved (สีเขียว) */
+    .topic-badge.approved {
+        background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 100%);
+        color: #155724;
+        border: none;
+        box-shadow: 0 4px 6px rgba(150, 230, 161, 0.4);
+    }
+
+    .topic-badge.approved i {
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 50%;
+        padding: 4px;
+        font-size: 0.9rem;
+        margin-left: 8px;
+    }
+
+    /* 4.2 สไตล์ Suggested (สีส้ม/เหลือง) - แบบ Interactive */
+    .topic-badge.suggested {
+        background-color: #fff;
+        color: #d35400;
+        border: 2px solid #ffcc80;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Effect ตอนเอาเมาส์ชี้ (Hover) */
+    .topic-badge.suggested:hover {
+        background-color: #ffe0b2;
+        border-color: #ffb74d;
+        color: #e65100;
+        transform: translateY(-4px) scale(1.05);
+        /* ลอยขึ้นและขยาย */
+        box-shadow: 0 8px 15px rgba(255, 167, 38, 0.3);
+    }
+
+    /* Effect ตอนกด (Active) */
+    .topic-badge.suggested:active {
+        transform: translateY(-1px) scale(0.98);
+        box-shadow: 0 2px 5px rgba(255, 167, 38, 0.3);
+    }
+
+    /* Badge บอกจำนวนคนโหวต */
+    .vote-count-badge {
+        background-color: #e65100;
+        color: white;
+        border-radius: 20px;
+        padding: 2px 10px;
+        font-size: 0.9rem;
+        margin-left: 10px;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    /* 5. ส่วนเพิ่มหัวข้อใหม่ (Dropdowns) */
+    .vote-row {
+        background: #fff;
+        border: 1px dashed #ced4da;
+        /* เส้นประดูสะอาดตา */
+        padding: 15px;
+        border-radius: 12px;
+        margin-bottom: 12px;
+        transition: border-color 0.3s;
+        gap: 15px;
+    }
+
+    .vote-row:hover {
+        border-color: var(--color-primary);
+        background: #f8faff;
+    }
+
+    .vote-select {
+        height: 50px;
+        /* สูงขึ้น กดง่ายในมือถือ */
+        font-size: 1.1rem;
+        border-radius: 8px;
+        border: 1px solid #dfe1e5;
+        background-color: #fff;
+        padding: 0 15px;
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .vote-select:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.1);
+        outline: none;
+    }
+
+    .btn-remove-row {
+        margin: auto;
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 35px;
+        height: 35px;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .btn-remove-row:hover {
+        background-color: #c82333;
+        transform: translateY(-2px);
+    }
+
+    /* 6. ปุ่มเพิ่มแถว (Add Row Button) */
+    #btn-add-vote-row {
+        padding: 10px 20px;
+        font-size: 1.2rem;
+        border-radius: 50px;
+        background-color: #e9f5ff;
+        color: var(--color-primary);
+        border: 2px solid var(--color-primary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    #btn-add-vote-row:hover {
+        background-color: rgba(26, 115, 232, 0.05);
+        border-style: solid;
+        transform: translateY(-2px);
+    }
+
+    /* 7. ปุ่ม Submit / Close */
+    #btn-submit-vote,
+    #btn-close-vote-modal {
+        padding: 12px 30px;
+        font-size: 1.3rem;
+        border-radius: 50px;
+        letter-spacing: 0.5px;
+    }
+
+    #btn-submit-vote {
+        background: linear-gradient(45deg, #1a73e8, #0056b3);
+        box-shadow: 0 4px 10px rgba(26, 115, 232, 0.4);
+    }
+
+    #btn-submit-vote:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(26, 115, 232, 0.6);
+    }
+
+    /* 8. ข้อความ Empty State */
+    .empty-state-text {
+        font-size: 1.1rem;
+        color: #adb5bd;
+        font-weight: 400;
+        padding: 10px 0;
+    }
+
+    /* Specific styling for Question Details Section */
+    #report-question-details {
+        background-color: #fef4f4;
+        /* สีแดงอ่อนมาก */
+        border: 1px solid var(--color-wrong);
+    }
+
+    #report-question-details h6 {
+        color: var(--color-wrong);
+        font-size: 1.3rem;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        border-bottom: 2px solid var(--color-wrong);
+        /* เพิ่มขีดเส้นใต้ */
+        padding-bottom: 5px;
+    }
+
+    #report-question-text {
+        font-size: 1.15rem !important;
+        /* ปรับขนาดข้อความโจทย์ */
+        line-height: 1.5;
+        text-align: left;
+        color: var(--color-dark);
+    }
+
+    .report-img-preview {
+        max-width: 100%;
+        max-height: 200px;
+        /* จำกัดความสูงไม่ให้ Modal ยาวเกินไป */
+        width: auto;
+        display: block;
+        margin: 5px auto;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+
+    .report-choice-img {
+        max-width: 100%;
+        max-height: 120px;
+        /* รูปในช้อยส์ให้เล็กกว่ารูปโจทย์หน่อย */
+        width: auto;
+        display: block;
+        margin-top: 5px;
+        border-radius: 4px;
+    }
+
+    #report-choices-list {
+        margin-top: 10px;
+        padding-left: 0;
+        list-style: none;
+        /* เอา bullet ออก */
+        font-size: 5rem;
+        line-height: 1.6;
+    }
+
+    #report-choices-list p {
+        margin: 5px 0;
+        padding: 3px 5px;
+        border-left: 3px solid #ccc;
+        transition: background-color 0.1s;
+    }
+
+    .modal-section:nth-of-type(2) {
+        /* Targeting the suggestion section */
+        background-color: #f0fff0;
+        /* สีเขียวอ่อนมาก */
+        border: 1px solid var(--color-correct);
+    }
+
+    .modal-section:nth-of-type(2) h6 {
+        color: var(--color-correct);
+        font-size: 1.3rem;
+    }
+
+    #modal-import-code {
+        width: 95%;
+        min-height: 80px;
+        padding: 0.75rem;
+        font-size: 1rem;
+        font-family: monospace;
+        border-radius: var(--border-radius);
+        border: 1px solid #ced4da;
+        margin-bottom: 1rem;
+    }
+
+    /* Dropdown and Textarea for Suggestion */
+    #report-correct-choice-select,
+    #report-new-choice-textarea {
+        width: 100%;
+        padding: 10px;
+        border-radius: var(--border-radius);
+        border: 1px solid #ced4da;
+        font-family: var(--font-primary);
+        font-size: 1rem;
+        box-sizing: border-box;
+        transition: border-color 0.2s;
+    }
+
+    #report-correct-choice-select:focus,
+    #report-new-choice-textarea:focus {
+        border-color: var(--color-primary);
+        outline: none;
+    }
+
+    /* Specific styling for Reason Textarea */
+    #report_text {
+        min-height: 100px !important;
+        width: 100%;
+        padding: 0.75rem;
+        border-radius: var(--border-radius);
+        border: 1px solid #ced4da;
+        font-family: var(--font-primary);
+        font-size: 1rem;
+        box-sizing: border-box;
+    }
+
+    #modal-import-file-label {
+        cursor: pointer;
+    }
+
+    /* --- Results Table --- */
+    #submission-filter {
+        width: 100%;
+        max-width: 300px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+        border-radius: var(--border-radius);
+        border: 1px solid #dee2e6;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='currentColor' class='bi bi-chevron-down' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.75rem center;
+        padding-right: 2rem;
+        cursor: pointer;
+    }
+
+    #submission-filter option {
+        font-size: 1.2rem;
+        cursor: pointer;
+        background-color: var(--color-surface);
+        color: var(--color-text);
+    }
+
+    #submission-filter:hover {
+        background-color: var(--color-light-hover);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 2rem;
+        font-size: 1.4rem;
+    }
+
+    table th,
+    table td {
+        border: 1px solid #dee2e6;
+        padding: 0.75rem;
+        text-align: left;
+    }
+
+    table td img.answer-img {
+        max-height: 80px;
+        width: auto;
+    }
+
+    table th {
+        background-color: var(--color-dark);
+        color: white;
+    }
+
+    #search-section {
+        width: 95%;
+        max-width: 900px;
+        padding: 2rem;
+        margin-top: 2rem;
+        border: 1px solid #dee2e6;
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    #search-section h2 {
+        font-size: 1.8rem;
+        margin: 0;
+    }
+
+    #search-input {
+        width: 100%;
+        max-width: 600px;
+        padding: 0.75rem;
+        font-size: 1.2rem;
+        font-family: var(--font-primary);
+        font-weight: 700;
+        border-radius: var(--border-radius);
+        border: 1px solid #ced4da;
+    }
+
+    #search-results-container {
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    .search-img-thumb {
+        max-height: 80px;
+        /* ความสูงสูงสุดของรูปตัวเลือก/เฉลย */
+        max-width: 150px;
+        width: auto;
+        vertical-align: middle;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin: 2px;
+        transition: transform 0.2s;
+    }
+
+    .search-img-thumb:hover {
+        transform: scale(2.5);
+        /* ขยายเมื่อเอาเมาส์ชี้ */
+        z-index: 10;
+        position: relative;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    }
+
+    /* --- Utility & Helper Classes --- */
+    .small-text {
+        font-size: 1.3rem;
+        color: #555;
+        text-align: center;
+        width: 100%;
+    }
+
+    a.small-text {
+        text-decoration: none;
+        color: var(--color-primary);
+    }
+
+    a.small-text:hover {
+        text-decoration: underline;
+    }
+
+    /* --- Floating Action Buttons --- */
+    .fab-container {
+        position: fixed;
+        right: 2%;
+        top: 40%;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .fab {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background-color: var(--color-primary);
+        color: white;
+        border: none;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 24px;
+        transition: background-color 0.3s, transform 0.2s, width 0.2s, height 0.2s;
+    }
+
+    .fab:hover {
+        background-color: var(--color-primary-hover);
+        transform: scale(1.05);
+    }
+
+    #scroll-to-quiz-btn {
+        background-color: var(--color-dark);
+    }
+
+    #scroll-to-quiz-btn:hover {
+        background-color: var(--color-dark-hover);
+    }
+
+
+    /* --- Responsive Adjustments --- */
+    @media (max-width: 768px) {
+        body {
+            margin-top: 120px;
+            padding: 1rem 0.5rem;
+        }
+
+        .container {
+            padding: 1rem;
+        }
+
+        .selection-container {
+            padding: 0.5rem;
+        }
+
+        #quiz-container {
+            padding: 1rem;
+        }
+
+        #quiz-container,
+        #search-section {
+            padding: 1rem;
+        }
+
+        .nav-container {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        #prev-question,
+        #next-question {
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            max-width: 800px;
+            overflow-x: auto;
+            display: block;
+        }
+
+        #image-container-div {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            width: 80%;
+            max-width: 500px;
+            height: 400px;
+            overflow: auto;
+            position: relative;
+            border: 1px solid #ccc;
+        }
+
+        #image-container-div img {
+            max-width: 100%;
+            height: auto;
+            border-radius: var(--border-radius);
+        }
+
+        .fab-container {
+            top: 50%;
+        }
+
+        .fab {
+            width: 56px;
+            height: 56px;
+            font-size: 20px;
+        }
+
+        .selection-container h2 {
+            font-size: 1.3rem;
+        }
+
+        .accordion-header {
+            font-size: 1.2rem;
+        }
+
+        .toggle-button {
+            font-size: 1rem;
+            padding: 8px 10px;
+        }
+
+        #selected-topics-status {
+            font-size: 1rem;
+        }
+    }
+</style>
+
+<body>
+    <div class="container">
+
+        <!-- Report Modal Card -->
+        <div id="report-card" class="modal-card">
+            <div class="modal-body">
+                <h5 class="modal-title" style="color: var(--color-wrong);">แจ้งปัญหาและเสนอแนวทางแก้ไข</h5>
+
+                <!-- Section 1: Question Being Reported (Red/Error Tinge) -->
+                <div id="report-question-details" class="modal-section"
+                    style="text-align: left; background-color: #fff3f3; border: 2px solid #dc3545; padding: 15px;">
+
+                    <h6 style="color: #dc3545; font-size: 1.3rem; margin-bottom: 5px;">โจทย์ที่พบปัญหา:</h6>
+                    <p id="report-question-text" class="small-text"
+                        style="font-weight: 700; color: var(--color-text); margin-bottom: 15px; font-size: 3rem; line-height: 1.3;">
+                    </p>
+
+                    <div id="report-question-images" style="text-align: center; margin-bottom: 15px;"></div>
+
+
+                    <div style="border-top: 1px dashed #dc3545; padding-top: 10px;">
+                        <h6 style="font-size: 1.2rem; margin-top: 5px; margin-bottom: 5px;">ตัวเลือกที่มี (Choices):
+                        </h6>
+                        <div id="report-choices-list" style="font-size: 1.3rem; font-weight: 500; padding-left: 10px;">
+                            <!-- Choices will be populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Suggested Correction (Green/Success Tinge) -->
+                <div class="modal-section"
+                    style="text-align: left; background-color: #f0fff0; border: 2px solid #28a745;">
+
+                    <h6 style="color: #28a745; font-size: 1.3rem;">เสนอคำตอบที่ถูกต้อง / แก้ไข</h6>
+
+                    <!-- Option 1: Select from existing -->
+                    <p class="small-text" style="margin-bottom: 5px; font-weight: 700; color: #333;">1.
+                        เลือกจากตัวเลือกเดิม:
+                    </p>
+                    <select id="report-correct-choice-select"
+                        style="width: 100%; padding: 10px; margin-bottom: 10px; font-size: 1.4rem; border-radius: 5px; border: 2px solid #28a745; background-color: #fff; cursor: pointer; transition: all 0.3s ease;"></select>
+                    <option value="">-- เลือกข้อที่ถูกต้องจากตัวเลือกด้านบน --</option>
+                    </select>
+
+                    <!-- Option 2: Suggest new -->
+                    <p class="small-text" style="margin-bottom: 5px; font-weight: 700; color: #333;">2. หรือ
+                        พิมพ์คำตอบใหม่
+                        (ถ้าไม่มีในตัวเลือกเดิม):</p>
+                    <input type="text" id="report-new-choice-input" placeholder="พิมพ์คำตอบที่ถูกต้องใหม่"
+                        style="width: 100%; padding: 0.75rem; border-radius: 5px; border: 1px solid #ced4da; font-size: 1rem; box-sizing: border-box;">
+                </div>
+
+                <!-- Section 3: Reason/Explanation (Primary Tinge) -->
+                <div class="modal-section"
+                    style="text-align: left; background-color: #f8f9fa; border: 1px solid #dee2e6;">
+                    <h6 style="color: var(--color-primary); font-size: 1.5rem;">รายละเอียด/เหตุผลของปัญหา</h6>
+                    <textarea id="report_text"
+                        placeholder="ระบุเหตุผลที่โจทย์/เฉลยผิด, หรือรายละเอียดปัญหาอื่นๆ ให้ชัดเจนที่สุด..."
+                        style="width: 100%; min-height: 100px; font-size: 1.2rem;"></textarea>
+                </div>
+
+                <div class="controls-container">
+                    <button id="submit-report" class="quiz-button btn-dark">Submit Report</button>
+                    <button id="cancel-report" class="quiz-button btn-light">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Save/Load Modal -->
+        <div id="progress-modal-card" class="modal-card">
+            <div class="modal-body">
+                <div class="controls-container" style="margin-top: 0.5rem;">
+                    <button id="close-progress-modal" class="quiz-button btn-light">ปิด</button>
+                </div>
+                <h5 class="modal-title">บันทึก / ทำต่อจากครั้งก่อน</h5>
+
+                <!-- Export Section -->
+                <div class="modal-section">
+                    <h6>ส่งออกความคืบหน้าปัจจุบัน</h6>
+                    <p class="small-text" style="margin-bottom: 1rem;">บันทึกคำตอบและลำดับคำถามปัจจุบัน</p>
+                    <div id="feedback-save" class="small-text" style="margin-top: 10px;"></div>
+                    <div class="controls-container">
+                        <button id="modal-export-txt-btn" class="quiz-button btn-export">Export to TXT</button>
+                        <button id="modal-export-copy-btn" class="quiz-button btn-export">Copy Code</button>
+                    </div>
+                </div>
+
+                <!-- Import Section -->
+                <div class="modal-section">
+                    <h6>โหลดความคืบหน้า</h6>
+                    <p class="small-text" style="margin-bottom: 1rem;">วางโค้ดที่คัดลอกมา หรืออัปโหลดไฟล์ .txt
+                        เพื่อทำต่อ</p>
+                    <textarea id="modal-import-code" placeholder="วาง Code ที่นี่..."></textarea>
+                    <div class="controls-container">
+                        <label for="modal-import-file" id="modal-import-file-label"
+                            class="quiz-button btn-light">อัปโหลดไฟล์
+                            (.txt)</label>
+                        <input type="file" id="modal-import-file" accept=".txt" style="display:none;">
+                        <button id="modal-import-btn" class="quiz-button btn-import">Load</button>
+                    </div>
+                </div>
+
+
+            </div>
+        </div>
+
+        <!-- ***** PDF Choice Modal ***** -->
+        <div id="pdf-choice-modal" class="modal-card">
+            <div class="modal-body">
+                <h5 class="modal-title">เลือกรูปแบบการบันทึก PDF</h5>
+                <p class="small-text">กรุณาเลือกรูปแบบ PDF ที่ต้องการดาวน์โหลด</p>
+
+                <!-- Option 1: Download Results -->
+                <div class="modal-section">
+                    <h6>โหลดผลการทำข้อสอบ (สำหรับทบทวน)</h6>
+                    <p class="small-text">ไฟล์ PDF จะประกอบด้วยคำถาม, คำตอบของคุณ, เฉลย,
+                        และคำอธิบายเฉพาะข้อที่คุณได้ทำไปแล้ว</p>
+                    <button id="save-results-pdf-btn" class="quiz-button btn-dark">ดาวน์โหลดผลลัพธ์</button>
+                </div>
+
+                <!-- Option 2: Download Practice Sheet -->
+                <div class="modal-section">
+                    <h6>โหลดชุดข้อสอบ (สำหรับทำในกระดาษ)</h6>
+                    <p class="small-text">ไฟล์ PDF จะประกอบด้วยคำถามและตัวเลือกทั้งหมดในหัวข้อที่เลือก
+                        พร้อมเฉลยท้ายเอกสาร</p>
+                    <button id="save-practice-pdf-btn" class="quiz-button btn-dark">ดาวน์โหลดชุดข้อสอบ</button>
+                </div>
+
+                <div class="controls-container" style="margin-top: 1rem;">
+                    <button id="close-pdf-modal-btn" class="quiz-button btn-light">ยกเลิก</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ***** Vote Category Modal (Redesigned) ***** -->
+        <div id="vote-category-modal" class="modal-card">
+            <div class="modal-body" style="padding: 1.5rem; max-width: 600px;">
+                <h5 class="modal-title" style="color: var(--color-primary); margin-bottom: 0.5rem;">
+                    <i class="fas fa-tags"></i> จัดหมวดหมู่ข้อสอบ
+                </h5>
+                <p class="small-text" style="margin-bottom: 1rem; color: #666;">
+                    ช่วยกันระบุว่าข้อนี้อยู่ในหัวข้อใดได้บ้าง</p>
+
+                <!-- Preview โจทย์ -->
+                <div id="vote-question-preview"
+                    style="background:#f8f9fa; padding:12px; border-left: 4px solid var(--color-primary); border-radius:4px; margin-bottom:20px; font-weight:600; font-size: 1rem; color: #333; line-height: 1.4;">
+                </div>
+
+                <!-- Section 1: หัวข้อปัจจุบัน (Approved) -->
+                <div class="vote-section">
+                    <h6 style="font-size: 1.1rem; color: #28a745; margin-bottom: 8px;">
+                        <i class="fas fa-check-circle"></i> หัวข้อปัจจุบัน (Approved)
+                    </h6>
+                    <div id="current-topics-container" class="topics-badge-container">
+                        <!-- Badges will be injected here -->
+                        <span class="empty-state-text">- ยังไม่มีหัวข้อ -</span>
+                    </div>
+                </div>
+
+                <!-- Section 2: สิ่งที่คนอื่นเสนอ (Pending) -->
+                <div class="vote-section" style="margin-top: 15px;">
+                    <h6 style="font-size: 1.1rem; color: #fd7e14; margin-bottom: 8px;">
+                        <i class="fas fa-clock"></i> รออนุมัติ (คลิกเพื่อโหวตเห็นด้วย +1)
+                    </h6>
+                    <div id="suggested-topics-container" class="topics-badge-container">
+                        <span class="empty-state-text"><i class="fas fa-spinner fa-spin"></i> กำลังโหลดข้อมูล...</span>
+                    </div>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+                <!-- Section 3: เพิ่มหัวข้อใหม่ -->
+                <h6 style="font-size: 1.1rem; color: var(--color-dark); margin-bottom: 10px;">
+                    <i class="fas fa-plus-circle"></i> เสนอหัวข้อเพิ่มเติม
+                </h6>
+
+                <div id="vote-rows-container">
+                    <!-- Dynamic Rows Here -->
+                </div>
+
+                <button id="btn-add-vote-row" class="btn-add-row"
+                    style="width: 100%; justify-content: center; margin-top: 10px;">
+                    <i class="fas fa-plus"></i> เพิ่มช่องเลือกหัวข้อ
+                </button>
+
+                <div class="controls-container" style="margin-top: 1.5rem; justify-content: flex-end;">
+                    <button id="btn-close-vote-modal" class="quiz-button btn-light">ปิด</button>
+                    <button id="btn-submit-vote" class="quiz-button btn-dark" style="min-width: 120px;">ยืนยัน</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ***** Topic Selection Area (Accordion UI) ***** -->
+        <div class="selection-container">
+            <h2>✅ เลือกหัวข้อได้เลยย</h2>
+
+            <!-- Status Bar -->
+            <div id="selected-topics-status">
+                <p class="small-text" style="margin: 0; color: #007bff; font-weight: 700;">
+                    กำลังโหลดรายวิชา...
+                </p>
+            </div>
+
+            <!-- ส่วนที่จะถูกสร้างด้วย JS -->
+            <div id="dynamic-accordion-area">
+                <div class="loading-spinner"></div>
+                <p style="text-align:center;">กำลังดึงข้อมูลจาก Server...</p>
+            </div>
+
+            <div class="controls-container">
+                <button id="save" class="quiz-button">Save to PDF</button>
+                <button id="toggle-random-btn" class="quiz-button">สลับโหมดสุ่ม/เรียงลำดับ</button>
+                <button id="show-all-answers-btn" class="quiz-button btn-light">แสดงเฉลย (Screening)</button>
+                <button id="show-progress-modal-btn" class="quiz-button btn-import">บันทึก / ทำต่อจากครั้งก่อน</button>
+            </div>
+            <div class="small-text" style="margin-top: 10px;">
+                หมายเหตุ : ถ้าเจอโจทย์มีปัญหาพิมพ์เข้ามาใน report ได้เลย | คีย์ลัด [ไม่ได้ลองกด F7]: ← (ก่อนหน้า), →
+                (ถัดไป), Spacebar (เลือก), Enter (ส่งคำตอบ)
+            </div>
+        </div>
+
+
+        <!-- Main Quiz -->
+        <main id="quiz-container">
+            <h1>Random Quiz | ข้อที่ <span id="questionIndex"></span> | <span id="score"></span></h1>
+            <p id="question"></p>
+            <div id="image-container-div" style="display: none;">
+                <button id="prev-img-btn" class="img-nav-btn"><i class="fas fa-chevron-left"></i></button>
+                <img id="question-image" src="" alt="Question Image" />
+                <button id="next-img-btn" class="img-nav-btn"><i class="fas fa-chevron-right"></i></button>
+                <div id="image-counter">1/1</div>
+            </div>
+            <div id="choices"></div>
+            <button id="submit-btn" class="quiz-button btn-dark">Submit Answer</button>
+            <p id="feedback"></p>
+            <div class="nav-container">
+                <button id="prev-question" class="quiz-button btn-dark">Previous Question</button>
+                <button id="next-question" class="quiz-button btn-dark">Next Question</button>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 15px;">
+                <button id="report" class="quiz-button">Report Problem</button>
+                <button id="btn-open-vote" class="quiz-button"
+                    style="background: linear-gradient(to right, #a8e063, #56ab2f); color: white;">
+                    <i class="fas fa-tags"></i> ช่วยทำข้อสอบแยกเลค
+                </button>
+            </div>
+            <span style="display: block; margin-top: 20px;">
+                <a class="small-text"
+                    href="https://docs.google.com/spreadsheets/d/12rN8vcykEwgcPFK4LoOj18PEhj7JPhwMfz6uUkKrhJU/edit?usp=sharing"
+                    target="_blank">View Report Sheet</a>
+            </span>
+        </main>
+
+        <!-- Results Table -->
+        <select id="submission-filter">
+            <option value="all">All Submissions</option>
+            <option value="correct">Correct Answers</option>
+            <option value="incorrect">Incorrect Answers</option>
+        </select>
+        <table>
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Question</th>
+                    <th>Correct Answer</th>
+                    <th>Your Answer</th>
+                    <th>Explanation</th>
+                    <th>Image [Click for zoom]</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <!-- Submission results will be populated here -->
+            </tbody>
+        </table>
+        <!-- Search Section -->
+        <section id="search-section">
+            <h2>ค้นหาจากโจทย์ทั้งหมด</h2>
+            <input type="text" id="search-input" placeholder="พิมพ์คำค้นหาในโจทย์, ตัวเลือก, หรือคำอธิบาย...">
+
+            <div style="width: 100%; max-width: 600px; text-align: left; margin-top: 5px;">
+                <small style="color: #666; cursor: pointer;" onclick="$('#search-help').slideToggle()">
+                    <i class="fas fa-info-circle"></i> วิธีใช้การค้นหา (คลิกเพื่อดู)
+                </small>
+                <div id="search-help"
+                    style="display: none; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-top: 5px; font-size: 1.2rem; line-height: 1.4;">
+                    เทคนิคการค้นหา:<br>
+                    1. ค้นหาเจาะจง (Exact): ใช้เครื่องหมายคำพูด เช่น "กระเพาะอาหาร"<br>
+                    2. ค้นหาหลายคำ (OR): "superior" <u>OR</u> "inferior" จะหาข้อที่มีคำว่า "superior" หรือ
+                    "inferior"<br>
+                    3. ต้องมีทุกคำ (AND): "superior" <u>AND</u> "inferior" (หาข้อที่มีทั้ง 2 คำนี้)<br>
+                    4. ไม่ต้องการคำนี้ (NOT): "superior" <u>NOT</u> "inferior" (เอาข้อที่มี "superior" แต่ไม่มี
+                    "inferior")
+                </div>
+            </div>
+            <button id="search-btn" class="quiz-button btn-dark">ค้นหา</button>
+            <div id="search-results-container">
+                <!-- Search results will be displayed here as a table -->
+            </div>
+        </section>
+    </div>
+
+    <!-- Floating Action Buttons -->
+    <div class="fab-container">
+        <button id="scroll-to-search-btn" class="fab" title="เลื่อนไปส่วนค้นหา">
+            <i class="fas fa-search"></i>
+        </button>
+        <button id="scroll-to-quiz-btn" class="fab" title="เลื่อนไปส่วนคำถาม">
+            <i class="fas fa-arrow-up"></i>
+        </button>
+    </div>
+
+    <script>
+        // Using jQuery's shorthand for document.ready
+        $(function () {
+
+            // --- CONFIG ---
+            const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwghcdH-RfKhXBga3tCTsUz1xcwQ7BDbVsxuWhfJufJjygwHtfWdFWNJDbDsw98bnqa/exec';
+
+            // --- THSARABUN FONT ---
+            const thSarabunBase64 = '';
+
+
+            // --- CACHED JQUERY SELECTORS ---
+            const $feedbackSave = $('#feedback-save');
+            const $question = $('#question');
+            const $choices = $('#choices');
+            const $feedback = $('#feedback');
+            const $score = $('#score');
+            const $questionIndex = $('#questionIndex');
+            const $imageContainer = $('#image-container-div');
+            const $questionImage = $('#question-image');
+            const $reportCard = $('#report-card');
+            const $reportText = $('#report_text');
+            const $reportQuestionText = $('#report-question-text');
+            const $reportChoicesList = $('#report-choices-list');
+            const $reportCorrectChoiceSelect = $('#report-correct-choice-select');
+            const $reportNewChoiceInput = $('#report-new-choice-input');
+            const $toggleRandomBtn = $('#toggle-random-btn');
+            const $showAllAnswersBtn = $('#show-all-answers-btn');
+            const $submitBtn = $('#submit-btn');
+            const $tableBody = $('table tbody');
+            const $searchInput = $('#search-input');
+            const $searchBtn = $('#search-btn');
+            const $searchResultsContainer = $('#search-results-container');
+            const $progressModal = $('#progress-modal-card');
+            const $pdfChoiceModal = $('#pdf-choice-modal');
+            const $selectedTopicsStatus = $('#selected-topics-status'); // NEW Selector
+
+            // --- STATE VARIABLES ---
+            let globalStructure = { subjects: [], topics: [] };
+            let allQuestions = [];
+            let currentQuestions = [];
+            let current_question = {};
+            let score = 0;
+            let questionIndex = 0;
+            let currentImageArray = [];
+            let currentImageIndex = 0;
+            let isRandomized = true;
+            let isShowingAllAnswers = false;
+
+
+            // --- CORE FUNCTIONS ---
+
+            initApp();
+
+            function initApp() {
+                // 1. อ่านค่า parameter 'subject' จาก URL (เช่น ?subject=GI)
+                const urlParams = new URLSearchParams(window.location.search);
+                // ถ้าไม่มีค่า (null) ให้ใช้เป็นค่าว่าง ''
+                const subjectParam = urlParams.get('subject') || '';
+
+                console.log("Current Subject Filter:", subjectParam ? subjectParam : "All Subjects");
+
+                // UI Feedback: แจ้งผู้ใช้ว่ากำลังโหลดข้อมูล
+                const loadingText = subjectParam
+                    ? `กำลังโหลดข้อมูลวิชา: <b>${subjectParam}</b> ...`
+                    : `กำลังโหลดข้อมูลทั้งหมด...`;
+
+                $('#selected-topics-status').html(`
+        <p class="small-text" style="color: #007bff;">
+            <i class="fas fa-spinner fa-spin"></i> ${loadingText}
+        </p>
+    `);
+
+                // 2. Fetch Structure (ส่ง subject ไปด้วย)
+                fetch(`${APPSCRIPT_URL}?action=getStructure&subject=${subjectParam}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        globalStructure = data;
+
+                        // สร้าง Accordion UI ตามข้อมูลที่ได้ (ถ้ามี subject จะได้มาเฉพาะหัวข้อของวิชานั้น)
+                        renderAccordionUI(data);
+
+                        // UI Feedback: เปลี่ยนหัวข้อด้านบนให้รู้ว่าอยู่วิชาอะไร
+                        if (subjectParam) {
+                            // เปลี่ยนข้อความใน h2 ของ .selection-container
+                            $('.selection-container h2').html(`✅ เลือกหัวข้อ (วิชา: <span style="color:var(--color-primary)">${subjectParam}</span>)`);
+                        }
+
+                        // 3. Fetch Questions (ส่ง subject ไปด้วย เพื่อกรองโจทย์)
+                        return fetch(`${APPSCRIPT_URL}?action=getQuestions&subject=${subjectParam}`);
+                    })
+                    .then(res => res.json())
+                    .then(questions => {
+                        // Mapping ข้อมูลโจทย์ (เก็บ originalIndex ไว้สำหรับโหมดเรียงลำดับ)
+                        allQuestions = questions.map((q, index) => {
+                            return {
+                                ...q,
+                                _originalIndex: index
+                            };
+                        });
+
+                        // UI Feedback: โหลดเสร็จสิ้น
+                        $('#selected-topics-status').html(`
+                <p class="small-text" style="color:green; font-weight:bold;">
+                    <i class="fas fa-check-circle"></i> โหลดข้อมูลเสร็จสิ้น (${allQuestions.length} ข้อ) พร้อมเริ่มทำข้อสอบ
+                </p>
+            `);
+
+                        // 4. สั่งให้แสดงผลข้อสอบ
+                        // (updateQuestionSet จะดึง allQuestions มาแสดง หากยังไม่ได้ติ๊กเลือกหัวข้อ)
+                        updateQuestionSet();
+
+                        // 5. เลื่อนหน้าจอลงมาที่ส่วนทำข้อสอบอัตโนมัติ
+                        $('html, body').animate({
+                            scrollTop: $("#quiz-container").offset().top - 20
+                        }, 800);
+                    })
+                    .catch(err => {
+                        console.error("Init App Error:", err);
+
+                        // UI Feedback: กรณีเกิดข้อผิดพลาด
+                        $('#selected-topics-status').html(`
+                <p class="small-text" style="color:red;">
+                    <i class="fas fa-exclamation-triangle"></i> เกิดข้อผิดพลาดในการโหลดข้อมูล (กรุณารีเฟรชหน้าเว็บ)
+                </p>
+            `);
+                        $('#dynamic-accordion-area').html('<p style="color:red; text-align:center;">ไม่สามารถเชื่อมต่อกับ Server ได้</p>');
+                    });
+            }
+
+            function fetchPendingVotes(questionId) {
+                const $container = $('#suggested-topics-container');
+                $container.html('<span class="empty-state-text"><i class="fas fa-spinner fa-spin"></i> กำลังโหลดข้อมูล...</span>');
+
+                // ต้องเพิ่ม action=getPendingVotes ใน AppScript
+                fetch(`${APPSCRIPT_URL}?action=getPendingVotes&qid=${questionId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        $container.empty();
+                        if (!data || data.length === 0) {
+                            $container.html('<span class="empty-state-text">- ยังไม่มีข้อเสนอใหม่ -</span>');
+                            return;
+                        }
+
+                        // data ควรเป็น [{topicId: 'xxx', count: 3}, ...]
+                        data.forEach(item => {
+                            const topicName = getTopicNameById(item.topicId);
+                            const $badge = $(`
+                    <div class="topic-badge suggested" title="คลิกเพื่อโหวตเห็นด้วย">
+                        ${topicName} 
+                        <span class="vote-count-badge">${item.count} <i class="fas fa-user"></i></span>
+                    </div>
+                `);
+
+                            // Feature: คลิกที่ Badge เพื่อโหวตทันที (Upvote)
+                            $badge.on('click', function () {
+                                if (confirm(`ต้องการโหวตเห็นด้วยกับหัวข้อ "${topicName}" ใช่ไหม?`)) {
+                                    submitSingleVote(item.topicId);
+                                }
+                            });
+
+                            $container.append($badge);
+                        });
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        $container.html('<span class="empty-state-text" style="color:red">โหลดข้อมูลไม่สำเร็จ</span>');
+                    });
+            }
+            // --- RENDER UI ---
+            function renderAccordionUI(data) {
+                const $container = $('#dynamic-accordion-area');
+                $container.empty();
+
+                // data.subjects = [{year, subjectId, subjectName, accordionGroup}]
+                // data.topics = [{topicId, subjectRef, accordionGroup, topicName}]
+
+                // 1. Group Topics by Subject & AccordionGroup
+                // เราจะสร้าง Accordion ตาม "AccordionGroup" ที่ระบุใน Sheet Structure/Topics
+
+                // หากลุ่ม Accordion ที่ไม่ซ้ำกันจาก Structure
+                // (สมมติว่า AccordionGroup คือ Key หลักในการแบ่งกลุ่ม)
+                const groups = {};
+
+                data.topics.forEach(topic => {
+                    const key = topic.accordionGroup || 'Uncategorized';
+                    if (!groups[key]) groups[key] = [];
+                    groups[key].push(topic);
+                });
+
+                // สร้าง HTML
+                for (const [groupName, topics] of Object.entries(groups)) {
+                    // หา Subject Name มาประกอบ (ถ้าจำเป็น)
+                    // ในที่นี้ใช้ GroupName เป็น Header
+
+                    let topicButtons = topics.map(t => `
+                <input type="checkbox" id="${t.topicId}" name="topics" value="${t.topicId}" hidden>
+                <label for="${t.topicId}" class="toggle-button" title="${t.topicName}">${t.topicName}</label>
+            `).join('');
+
+                    let html = `
+                <details class="accordion-group">
+                    <summary class="accordion-header">
+                        <i class="fas fa-folder" style="margin-right: 10px;"></i> ${groupName}
+                    </summary>
+                    <div class="button-grid">
+                        ${topicButtons}
+                    </div>
+                </details>
+            `;
+                    $container.append(html);
+                }
+
+                // Bind Events สำหรับ Checkbox ใหม่
+                $('input[type="checkbox"][name="topics"]').on('change', () => {
+                    updateQuestionSet();
+                    updateSelectedTopicsStatus();
+                });
+            }
+
+            function renderCurrentTopics() {
+                const $container = $('#current-topics-container');
+                $container.empty();
+
+                let cats = current_question.category;
+                // แปลงให้เป็น Array ถ้ายังไม่เป็น
+                if (!Array.isArray(cats)) cats = [cats];
+                // กรองค่าว่างและ Uncategorized
+                cats = cats.filter(c => c && c !== 'Uncategorized');
+
+                if (cats.length === 0) {
+                    $container.html('<span class="empty-state-text">- ยังไม่มีหัวข้อที่อนุมัติ -</span>');
+                    return;
+                }
+
+                cats.forEach(topicId => {
+                    // หาชื่อ Topic จาก globalStructure
+                    const topicName = getTopicNameById(topicId);
+                    const html = `
+            <span class="topic-badge approved" title="หัวข้อนี้ถูกยืนยันแล้ว">
+                ${topicName} <i class="fas fa-check" style="margin-left:5px;"></i>
+            </span>`;
+                    $container.append(html);
+                });
+            }
+            // --- Status Bar Update Function ---
+            function updateSelectedTopicsStatus() {
+                const $status = $('#selected-topics-status');
+                const selected = $('input[type="checkbox"][name="topics"]:checked');
+
+                $status.empty();
+                if (selected.length === 0) {
+                    $status.html('<p class="small-text" style="color: #007bff;">ยังไม่ได้เลือกหัวข้อ</p>');
+                } else {
+                    selected.each(function () {
+                        const label = $(`label[for='${this.id}']`).text();
+                        $status.append(`<button class="status-topic-button" onclick="$('#${this.id}').click()">${label} <i class="fas fa-times"></i></button>`);
+                    });
+                }
+            }
+
+
+            function updateQuestionSet(shouldSort = true) {
+                // เก็บ state ข้อที่ทำไปแล้ว
+                const previouslyAnswered = {};
+                currentQuestions.forEach(q => {
+                    if (q.state) previouslyAnswered[q.uniqueId] = { select: q.select, state: q.state };
+                });
+
+                // หา ID หัวข้อที่เลือก
+                const selectedTopicIds = $('input[type="checkbox"][name="topics"]:checked').map(function () {
+                    return this.value;
+                }).get();
+
+                currentQuestions = [];
+
+                if (selectedTopicIds.length === 0) {
+                    // ถ้าไม่เลือกอะไรเลย (หรือให้โหลดทั้งหมด)
+                    currentQuestions = allQuestions;
+                } else {
+                    // Filter ข้อสอบที่มี category ตรงกับที่เลือก
+                    // allQuestions[i].category คือ Array ของ TopicID ที่ข้อสอบนั้นอยู่
+                    currentQuestions = allQuestions.filter(q => {
+                        // เช็คว่า Category ของข้อสอบ มีอยู่ใน list ที่เลือกหรือไม่
+                        if (!q.category) return false;
+                        // q.category อาจเป็น string หรือ array
+                        let cats = Array.isArray(q.category) ? q.category : [q.category];
+                        return cats.some(c => selectedTopicIds.includes(c));
+                    });
+                }
+
+                // Restore State
+                score = 0;
+                currentQuestions.forEach(q => {
+                    if (previouslyAnswered[q.uniqueId]) {
+                        q.select = previouslyAnswered[q.uniqueId].select;
+                        q.state = previouslyAnswered[q.uniqueId].state;
+                        if (q.state && q.select === q.answer) score++;
+                    } else {
+                        q.state = false;
+                        q.select = "";
+                    }
+                });
+
+                if (shouldSort) sortCurrentQuestions();
+
+                $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+                questionIndex = 0;
+
+                if (currentQuestions.length > 0) {
+                    $imageContainer.hide();
+                    showQuestion();
+                }
+                updateSelectedTopicsStatus();
+            }
+
+            // ค้นหา function sortCurrentQuestions() แล้วแทนที่ด้วยโค้ดนี้
+            function sortCurrentQuestions() {
+                if (isRandomized) {
+                    currentQuestions.sort(() => Math.random() - 0.5);
+                } else {
+                    currentQuestions.sort((a, b) => a._originalIndex - b._originalIndex);
+                }
+            }
+            function showQuestion() {
+                if (!currentQuestions.length) return;
+
+                current_question = currentQuestions[questionIndex];
+
+                // Reset UI
+                $feedback.empty().removeClass();
+                $choices.empty();
+
+                // Question Text
+                $question.html(current_question.problem ? current_question.problem.replace(/\n/g, '<br>') : "");
+
+                // Images
+                currentImageArray = current_question.img ?
+                    (current_question.img.includes('///') ? current_question.img.split('///') : [current_question.img])
+                    : [];
+                currentImageIndex = 0;
+                updateImageGallery();
+
+                // Choices
+                const choicesRaw = current_question.choices || "";
+                const choicesArray = choicesRaw.split("///").map(s => s.trim()).filter(Boolean);
+
+                // Shuffle Choices display
+                let indices = choicesArray.map((_, i) => i);
+                for (let i = indices.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [indices[i], indices[j]] = [indices[j], indices[i]];
+                }
+
+                indices.forEach(i => {
+                    const choiceText = choicesArray[i];
+                    let content = choiceText;
+                    // Check link
+                    if (isUrl(choiceText)) {
+                        content = `<img src="${transformUrl(choiceText)}" alt="Choice">`;
+                    }
+                    $choices.append(`<button data-answer="${choiceText}">${content}</button>`);
+                });
+
+                // Restore Answered State
+                if (current_question.state) {
+                    checkAnswerUI(current_question.select, false); // false = don't update score again
+                } else if (isShowingAllAnswers) {
+                    // Show answer mode
+                    $choices.find(`button[data-answer="${current_question.answer}"]`).addClass('correct');
+                    $feedback.addClass('correct').html(`เฉลย: ${displayAnswerContent(current_question.answer)}`);
+                }
+
+                $questionIndex.text(`${questionIndex + 1}/${currentQuestions.length}`);
+
+                setTimeout(() => {
+                    $choices.find('button').first().focus();
+                }, 50);
+            }
+
+            const submitQuestion = () => {
+                if (current_question.state) return;
+
+                const $selectedBtn = $choices.find("button.selected");
+                const selectedAnswer = $selectedBtn.attr('data-answer');
+
+                if (!selectedAnswer) {
+                    alert("กรุณาเลือกคำตอบ");
+                    return;
+                }
+
+                currentQuestions[questionIndex].select = selectedAnswer;
+                currentQuestions[questionIndex].state = true;
+
+                if (selectedAnswer === current_question.answer) {
+                    score++;
+                    $feedback.addClass("correct").html(`ถูกต้อง!: ${displayAnswerContent(current_question.answer)}`);
+                } else {
+                    $feedback.addClass("incorrect").html(`ผิด! คำตอบที่ถูกคือ: ${displayAnswerContent(current_question.answer)}`);
+                }
+
+                $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+                highlightAnswers();
+                showSubmission();
+            };
+
+            function checkAnswerUI(selectedVal, updateScore = true) {
+                const correctVal = current_question.answer;
+
+                $choices.find('button').each(function () {
+                    const val = $(this).data('answer');
+                    if (val === correctVal) $(this).addClass('correct');
+                    if (val === selectedVal && val !== correctVal) $(this).addClass('wrong');
+                });
+
+                if (selectedVal === correctVal) {
+                    $feedback.addClass("correct").html(`ถูกต้อง! ${displayAnswerContent(correctVal)}`);
+                    if (updateScore) score++;
+                } else {
+                    $feedback.addClass("incorrect").html(`ผิด! คำตอบที่ถูกคือ: ${displayAnswerContent(correctVal)}`);
+                }
+                $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+            }
+
+            const updateImageGallery = () => {
+                const $prevBtn = $('#prev-img-btn');
+                const $nextBtn = $('#next-img-btn');
+                const $counter = $('#image-counter');
+
+                if (currentImageArray.length === 0) {
+                    $imageContainer.hide();
+                    return;
+                }
+
+                $imageContainer.show();
+                // เปลี่ยน src เป็นรูปปัจจุบัน
+                const currentUrl = transformUrl(currentImageArray[currentImageIndex]);
+                $questionImage.attr('src', currentUrl);
+
+                // ตรวจสอบว่ามีมากกว่า 1 รูปหรือไม่
+                if (currentImageArray.length >= 1) {
+                    $prevBtn.show();
+                    $nextBtn.show();
+                    $counter.show().text(`${currentImageIndex + 1} / ${currentImageArray.length}`);
+                } else {
+                    $prevBtn.hide();
+                    $nextBtn.hide();
+                    $counter.hide();
+                }
+            };
+
+            const highlightAnswers = () => {
+                $choices.find("button").each(function () {
+                    const buttonVal = $(this).attr('data-answer');
+                    if (buttonVal === current_question.answer) {
+                        $(this).addClass("correct");
+                    } else if (buttonVal === current_question.select) {
+                        $(this).addClass("wrong");
+                    }
+                });
+            };
+
+            const nextQuestion = () => {
+                if (!currentQuestions[questionIndex]?.state && !isShowingAllAnswers) {
+                    alert("กรุณาส่งคำตอบก่อน");
+                    return;
+                }
+                if (questionIndex < currentQuestions.length - 1) {
+                    questionIndex++;
+                    showQuestion();
+                } else {
+                    alert("นี่คือข้อสุดท้ายแล้ว!");
+                }
+            };
+
+            const prevQuestion = () => {
+                if (questionIndex > 0) {
+                    questionIndex--;
+                    showQuestion();
+                }
+            };
+
+            const showSubmission = (filter = 'all') => {
+                let rowsHtml = '';
+                const filteredQuestions = currentQuestions.slice().reverse().filter(q => {
+                    if (!q.state) return false; // Only show answered questions
+
+                    if (filter === 'correct') {
+                        return q.select === q.answer;
+                    } else if (filter === 'incorrect') {
+                        return q.select !== q.answer;
+                    }
+                    return true; // 'all' or any other case
+                });
+
+                filteredQuestions.forEach(q => {
+                    const selectStyle = q.select === q.answer ? 'color: green;' : 'color: red;';
+                    const selectText = `<span style="${selectStyle}">${q.select}</span>`;
+                    const foundId = globalStructure.topics.find(t =>
+                        Array.isArray(q.category) ? q.category.includes(t.topicId) : q.category === t.topicId
+                    )?.topicId;
+                    const topicLabel = foundId ? $(`label[for='${foundId}']`).text() : 'Unknown Topic';
+                    const choicesFormatted = q.choices ? q.choices.split('///').map(c => `<li>${c}</li>`).join('') : 'N/A';
+                    const explanationText = q.explain ? q.explain.replace(/\n/g, '<br>').replace(/\*+/g, match => '<b>' + '*'.repeat(match.length) + '</b>') : 'No explanation available.';
+                    const selectContent = displayAnswerContent(q.select);
+                    const answerContent = displayAnswerContent(q.answer);
+
+                    rowsHtml += `
+                        <tr>
+                            <td>${topicLabel}</td>
+                            <td>${q.problem}</td>
+                            <td>${answerContent}</td>
+                            <td>${q.select ? (q.select === q.answer ? `<span style="color:green">${selectContent}</span>` : `<span style="color:red">${selectContent}</span>`) : 'N/A'}</td>
+                            <td><pre style="white-space: pre-wrap; font-family: var(--font-primary);">${explanationText}</pre></td>
+                            <td><a href="${q.img}" target="_blank">${q.img ? `<img src="${transformUrl(q.img)}" alt="Question Image" style="max-width: 100px; max-height: 100px;">` : 'No image'}</a></td>
+                        </tr>`;
+                });
+                $tableBody.html(rowsHtml);
+            };
+
+            // Search
+            let isSearchInputTouched = false;
+
+            $searchInput.on('focus', function () {
+                if (!isSearchInputTouched) {
+                    const input = this;
+                    if (input.value === '') {
+                        input.value = '" "';
+                        if (input.setSelectionRange) {
+                            input.setSelectionRange(1, 2); // Move cursor to position 1
+                        } else if (input.createTextRange) { // Support IE เก่าๆ (เผื่อไว้) 
+                            const range = input.createTextRange();
+                            range.collapse(true);
+                            range.moveEnd('character', 1);
+                            range.moveStart('character', 1);
+                            range.select();
+                        }
+                    }
+                    isSearchInputTouched = true;
+                }
+            });
+
+            const performSearch = () => {
+                let searchTerm = $searchInput.val().trim().toLowerCase();
+
+                // ลบ "" ถ้าผู้ใช้ไม่ได้พิมพ์อะไรข้างใน (เช่น เหลือแค่ "")
+                if (searchTerm === '""' || !searchTerm) {
+                    $searchResultsContainer.html('<p class="small-text">กรุณาป้อนคำเพื่อค้นหา</p>');
+                    return;
+                }
+
+                // 1. แยกคำค้นหาและ Operator (รองรับ AND, OR, NOT และคำใน "...")
+                // Regex นี้จะจับกลุ่มคำที่อยู่ในเครื่องหมายคำพูด หรือคำที่คั่นด้วยช่องว่าง
+                // แก้ไข Regex เล็กน้อยเพื่อให้รองรับภาษาไทยและช่องว่างได้ดีขึ้น
+                const rawTerms = searchTerm.match(/(?:[^\s"“”]+|"[^"]*"|“[^”]*”)+/g) || [];
+                const terms = rawTerms.map(term => term.replace(/^["“”]|["“”]$/g, '')); // ลบ Quote หัวท้าย
+                const operators = ['and', 'or', 'not'];
+
+                // 2. กำหนดสี Highlight ให้แต่ละคำค้นหา
+                const colors = ['#FFECB3', '#FFCDD2', '#C8E6C9', '#BBDEFB', '#D1C4E9', '#FFE0B2', '#F0F4C3', '#DCEDC8', '#FFCCBC', '#D7CCC8'];
+                const termColors = {};
+                let colorIndex = 0;
+                terms.forEach((term) => {
+                    if (!operators.includes(term) && term.length > 0) {
+                        termColors[term] = colors[colorIndex % colors.length];
+                        colorIndex++;
+                    }
+                });
+
+                // 3. กรองคำถาม (Filter Logic)
+                let searchResults = allQuestions.filter(q => {
+                    let includeQuestion = false;
+                    let currentOperator = 'or'; // Default operator คือ OR
+
+                    // ถ้าไม่มีคำค้นหาเลย
+                    if (terms.length === 0) return false;
+
+                    // Loop ผ่านคำค้นหาทีละคำ
+                    for (let i = 0; i < terms.length; i++) {
+                        const term = terms[i];
+
+                        if (operators.includes(term)) {
+                            currentOperator = term;
+                        } else {
+                            // ตรวจสอบว่าคำค้นหาปรากฏในส่วนต่างๆ หรือไม่
+                            const termInQuestion =
+                                (q.problem && q.problem.toLowerCase().includes(term)) ||
+                                (q.choices && q.choices.toLowerCase().includes(term)) ||
+                                (q.explain && q.explain.toLowerCase().includes(term));
+
+                            // Logic แรกสุด (ตัวแรก)
+                            if (i === 0 || (i === 1 && operators.includes(terms[0]))) {
+                                if (currentOperator === 'not') includeQuestion = !termInQuestion;
+                                else includeQuestion = termInQuestion;
+                            } else {
+                                // Logic ต่อเนื่อง
+                                if (currentOperator === 'and') {
+                                    includeQuestion = includeQuestion && termInQuestion;
+                                } else if (currentOperator === 'or') {
+                                    includeQuestion = includeQuestion || termInQuestion;
+                                } else if (currentOperator === 'not') {
+                                    includeQuestion = includeQuestion && !termInQuestion;
+                                }
+                            }
+                            // Reset operator เป็น 'or' สำหรับคำถัดไป ถ้าไม่ได้ระบุ (Implicit OR)
+                            // แต่ถ้าเจอ A and B C -> จะเป็น (A and B) or C
+                            currentOperator = 'or';
+                        }
+                    }
+                    return includeQuestion;
+                });
+
+                // 4. ตัดคำถามซ้ำ (Deduplication)
+                const questionTexts = new Set();
+                searchResults = searchResults.filter(q => {
+                    const problemText = q.problem ? q.problem.replace(/^\d+\.\s*/, '') : '';
+                    const choicesText = q.choices ? q.choices : '';
+                    const uniqueKey = problemText + choicesText;
+
+                    if (questionTexts.has(uniqueKey)) {
+                        return false;
+                    } else {
+                        questionTexts.add(uniqueKey);
+                        return true;
+                    }
+                });
+
+                if (searchResults.length === 0) {
+                    $searchResultsContainer.html('<p class="small-text">ไม่พบผลลัพธ์ที่ตรงกัน</p>');
+                    return;
+                }
+
+                // --- Helper Function สำหรับ Highlight คำ ---
+                const highlight = (text) => {
+                    if (!text) return "";
+                    let highlightedText = text;
+
+                    // วนลูป Highlight ทุกคำค้นหา
+                    for (const term in termColors) {
+                        if (!term) continue;
+                        // Escape regex characters
+                        const safeTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(${safeTerm})`, 'gi');
+                        const color = termColors[term];
+
+                        highlightedText = highlightedText.replace(regex, `<mark style="background-color: ${color}; color: #000; padding: 0 2px; border-radius: 2px;">$1</mark>`);
+                    }
+                    return highlightedText;
+                };
+
+                // 5. สร้างตารางผลลัพธ์ (Render Table)
+                let resultsHtml = `
+                <p class="small-text" style="color: #28a745; font-weight: bold;">พบ ${searchResults.length} ข้อ</p>
+                <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 10%;">Topic</th>
+                            <th style="width: 40%;">Question & Choices</th>
+                            <th style="width: 15%;">Answer</th>
+                            <th style="width: 25%;">Explanation</th>
+                            <th style="width: 10%;">Image</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                searchResults.forEach(q => {
+                    // หาชื่อ Topic
+                    let topicLabel = 'Unknown';
+                    // เช็คจาก globalStructure ที่โหลดมา (ถ้ามี)
+                    if (typeof globalStructure !== 'undefined' && globalStructure.topics) {
+                        const foundTopic = globalStructure.topics.find(t =>
+                            Array.isArray(q.category) ? q.category.includes(t.topicId) : q.category === t.topicId
+                        );
+                        if (foundTopic) topicLabel = foundTopic.topicName || foundTopic.topicId;
+                    } else if (q.category) {
+                        topicLabel = Array.isArray(q.category) ? q.category.join(', ') : q.category;
+                    }
+
+                    // --- Highlight โจทย์ ---
+                    const problemHighlighted = highlight(q.problem).replace(/\n/g, '<br>');
+
+                    // --- ส่วนจัดการตัวเลือก ---
+                    const choicesFormatted = q.choices ? q.choices.split('///').map(c => {
+                        const trimmedC = c.trim();
+                        if (isUrl(trimmedC)) {
+                            return `<li><img src="${transformUrl(trimmedC)}" class="search-img-thumb" alt="Choice Image"></li>`;
+                        } else {
+                            return `<li>${highlight(trimmedC)}</li>`;
+                        }
+                    }).join('') : '';
+
+                    // --- ส่วนจัดการเฉลย ---
+                    let answerFormatted = q.answer;
+                    if (isUrl(q.answer)) {
+                        answerFormatted = `<img src="${transformUrl(q.answer)}" class="search-img-thumb" alt="Answer Image">`;
+                    } else {
+                        answerFormatted = highlight(q.answer);
+                    }
+
+                    // --- ส่วนคำอธิบาย ---
+                    let explanationText = q.explain ? q.explain : '-';
+                    explanationText = highlight(explanationText);
+                    explanationText = explanationText.replace(/\n/g, '<br>').replace(/\*([^*]+)\*/g, '<b>$1</b>');
+
+                    // --- ส่วนรูปโจทย์ ---
+                    let problemImageHtml = 'No image';
+                    if (q.img) {
+                        const imgList = q.img.split('///').map(url => url.trim()).filter(Boolean);
+                        problemImageHtml = imgList.map(url =>
+                            `<a href="${url}" target="_blank"><img src="${transformUrl(url)}" class="search-img-thumb" alt="Q Img"></a>`
+                        ).join(' ');
+                    }
+
+                    resultsHtml += `
+                    <tr>
+                        <td><small>${topicLabel}</small></td>
+                        <td style="text-align: left;">
+                            <strong>${problemHighlighted}</strong>
+                            <ul style="margin-left: 20px; padding-left: 0; list-style-type: upper-alpha;">
+                                ${choicesFormatted}
+                            </ul>
+                        </td>
+                        <td style="color: var(--color-correct); font-weight: bold; text-align: center;">
+                            ${answerFormatted}
+                        </td>
+                        <td><div style="white-space: pre-wrap; font-size: 0.9em;">${explanationText}</div></td>
+                        <td style="text-align: center;">${problemImageHtml}</td>
+                    </tr>`;
+                });
+
+                resultsHtml += `</tbody></table></div>`;
+                $searchResultsContainer.html(resultsHtml);
+            };
+
+            $searchBtn.on('click', performSearch);
+            $searchInput.on('keypress', function (e) {
+                if (e.which === 13) { performSearch(); }
+            });
+
+            // --- UTILITY FUNCTIONS (unchanged) ---
+            const transformUrl = (url) => {
+                if (!url) return "";
+                const match = url.match(/\/d\/(.*?)\//) || url.match(/id=([^&]+)/);
+                return (match && match[1]) ? `https://lh3.googleusercontent.com/d/${match[1]}?authuser=1=w1000-h1000` : url;
+            };
+
+            const isUrl = (s) => s && (typeof s === 'string') && (s.includes('drive.google.com') || s.startsWith('http'));
+
+            function getTopicNameById(topicId) {
+                if (!globalStructure.topics) return topicId;
+                const found = globalStructure.topics.find(t => t.topicId === topicId);
+                return found ? found.topicName : topicId;
+            }
+
+            const displayAnswerContent = (text) => {
+                if (!text) return "";
+                if (text.includes('drive.google.com') || text.startsWith('http')) {
+                    return `<img src="${transformUrl(text)}" style="height:50px; vertical-align:middle;">`;
+                }
+                return text;
+            };
+
+            const showImage = (url) => {
+                if (!url) {
+                    $imageContainer.hide();
+                } else {
+                    $questionImage.attr('src', url);
+                    $imageContainer.show();
+                }
+            };
+
+            const convertImgToBase64 = (url) => {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.setAttribute('crossOrigin', 'anonymous');
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const dataURL = canvas.toDataURL('image/jpeg');
+                        resolve(dataURL);
+                    };
+                    img.onerror = (error) => {
+                        reject(error);
+                    };
+                    img.src = url;
+                });
+            };
+
+            // --- EXPORT / IMPORT FUNCTIONS (unchanged) ---
+            const generateExportCode = () => {
+                if (currentQuestions.length === 0) {
+                    alert("กรุณาเลือกหัวข้อก่อนทำการ export");
+                    return null;
+                }
+                const answeredStates = {};
+                currentQuestions.forEach(q => {
+                    if (q.state) {
+                        answeredStates[q.uniqueId] = { select: q.select };
+                    }
+                });
+                const selectedTopics = globalStructure.topics
+                    .filter(t => $(`#${t.topicId}`).is(':checked'))
+                    .map(t => t.topicId);
+                const state = {
+                    topics: selectedTopics,
+                    answered: answeredStates,
+                    index: questionIndex,
+                    isRandom: isRandomized,
+                    order: currentQuestions.map(q => q.uniqueId)
+                };
+                return btoa(JSON.stringify(state));
+            };
+
+            const applyImportedState = (encodedString) => {
+                try {
+                    const stateJSON = atob(encodedString);
+                    const state = JSON.parse(stateJSON);
+
+                    $('input[type="checkbox"]').prop('checked', false);
+                    state.topics.forEach(topicId => {
+                        $(`#${topicId}`).prop('checked', true);
+                    });
+
+                    isRandomized = state.isRandom;
+                    $toggleRandomBtn.text(isRandomized ? 'โหมดสุ่ม (คลิกเพื่อเรียงลำดับ)' : 'โหมดเรียงลำดับ (คลิกเพื่อสุ่ม)');
+
+                    updateQuestionSet(false);
+
+                    const newOrderedQuestions = [];
+                    let newScore = 0;
+
+                    state.order.forEach(uniqueId => {
+                        const question = currentQuestions.find(q => q.uniqueId === uniqueId);
+                        if (question) {
+                            if (state.answered[uniqueId]) {
+                                question.state = true;
+                                question.select = state.answered[uniqueId].select;
+                                if (question.select === question.answer) {
+                                    newScore++;
+                                }
+                            }
+                            newOrderedQuestions.push(question);
+                        }
+                    });
+
+                    currentQuestions = newOrderedQuestions;
+
+                    score = newScore;
+                    questionIndex = state.index || 0;
+
+                    $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+                    showQuestion();
+                    alert("โหลดข้อมูลสำเร็จ!");
+                    $progressModal.fadeOut(); // Close modal on success
+
+                } catch (e) {
+                    console.error("Import failed:", e);
+                    alert("ไม่สามารถโหลดข้อมูลได้ อาจเป็นเพราะ Code ไม่ถูกต้อง");
+                }
+            };
+
+            // --- PDF GENERATION FUNCTIONS ---
+
+            // Function 1: Save the results of the quiz (only answered questions)
+            async function saveResultsToPdf() {
+                // --- 1. DATA PREPARATION ---
+                const save = {
+                    topic: [],
+                    questions: currentQuestions,
+                    score: score,
+                };
+                globalStructure.topics.forEach(topic => {
+                    if ($(`#${topic.topicId}`).is(':checked')) {
+                        save.topic.push(topic.topicName);
+                    }
+                });
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+
+                doc.addFileToVFS('THSarabunNew.ttf', thSarabunBase64);
+                doc.addFont('THSarabunNew.ttf', 'THSarabunNew', 'normal');
+                doc.setFont('THSarabunNew');
+
+                let y = 15;
+                const pageMargin = 15;
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const contentWidth = pageWidth - (pageMargin * 2);
+                const lineHeight = 8;
+                const itemSpacing = 4;
+                const blockSpacing = 12;
+
+                const checkPageBreak = (requiredHeight) => {
+                    if (y + requiredHeight > pageHeight - pageMargin) {
+                        doc.addPage();
+                        y = pageMargin;
+                    }
+                };
+
+                // HEADER
+                doc.setFontSize(18);
+                doc.text("สรุปผลการทำแบบทดสอบ (Quiz Result)", pageWidth / 2, y, { align: 'center' });
+                y += lineHeight + itemSpacing;
+
+                doc.setFontSize(16);
+                doc.text(`คะแนน: ${score}/${save.questions.length}`, pageMargin, y);
+                y += blockSpacing;
+
+                // BODY LOOP
+                for (const [index, q] of save.questions.entries()) {
+                    const questionText = `${index + 1}. ${q.problem.replace(/\n/g, ' ')}`;
+
+                    // คำนวณความสูงโจทย์
+                    let qHeight = doc.splitTextToSize(questionText, contentWidth).length * (lineHeight - 1);
+                    checkPageBreak(qHeight + blockSpacing);
+
+                    doc.setTextColor(0, 0, 0);
+                    const splitQuestion = doc.splitTextToSize(questionText, contentWidth);
+                    doc.text(splitQuestion, pageMargin, y);
+                    y += (splitQuestion.length * (lineHeight - 1)) + itemSpacing;
+
+                    // รูปโจทย์ (ถ้ามี)
+                    if (q.img) {
+                        try {
+                            const imgUrls = q.img.split('///').map(url => url.trim()).filter(Boolean);
+                            for (const imgUrl of imgUrls) {
+                                const base64Img = await convertImgToBase64(transformUrl(imgUrl));
+                                checkPageBreak(60 + itemSpacing);
+                                doc.addImage(base64Img, 'JPEG', pageMargin, y, 80, 60); // ปรับขนาดตามต้องการ
+                                y += 60 + itemSpacing;
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+
+                    // --- ส่วนตัวเลือก (Choices) ---
+                    doc.setFont('THSarabunNew', 'normal');
+                    doc.setFontSize(14);
+                    doc.text("ตัวเลือก:", pageMargin, y);
+                    y += lineHeight;
+
+                    const choicesArray = (q.choices || "").split('///').map(s => s.trim());
+                    for (let i = 0; i < choicesArray.length; i++) {
+                        const choice = choicesArray[i];
+                        const prefix = `${String.fromCharCode(65 + i)}. `;
+
+                        if (isUrl(choice)) {
+                            // ถ้าตัวเลือกเป็นรูป
+                            checkPageBreak(45); // เผื่อที่รูป
+                            doc.text(prefix, pageMargin, y + 5); // วาดตัว A.
+                            try {
+                                const base64C = await convertImgToBase64(transformUrl(choice));
+                                doc.addImage(base64C, 'JPEG', pageMargin + 10, y, 50, 40);
+                                y += 42;
+                            } catch (e) {
+                                doc.text("[Image Error]", pageMargin + 10, y);
+                                y += lineHeight;
+                            }
+                        } else {
+                            // ถ้าตัวเลือกเป็นข้อความ
+                            const fullText = prefix + choice;
+                            const splitC = doc.splitTextToSize(fullText, contentWidth);
+                            checkPageBreak(splitC.length * (lineHeight - 2));
+                            doc.text(splitC, pageMargin, y);
+                            y += splitC.length * (lineHeight - 2) + 2;
+                        }
+                    }
+                    y += itemSpacing;
+
+                    // --- ส่วนเฉลยและคำตอบของคุณ ---
+                    checkPageBreak(30); // เผื่อที่สำหรับคำตอบ
+
+                    // เฉลย (Correct Answer)
+                    doc.setFontSize(16);
+                    doc.setTextColor(34, 139, 34); // Green
+                    if (isUrl(q.answer)) {
+                        doc.text("คำตอบที่ถูก: (รูปภาพด้านล่าง)", pageMargin, y);
+                        y += lineHeight;
+                        try {
+                            const base64Ans = await convertImgToBase64(transformUrl(q.answer));
+                            checkPageBreak(45);
+                            doc.addImage(base64Ans, 'JPEG', pageMargin, y, 50, 40);
+                            y += 48;
+                        } catch (e) { }
+                    } else {
+                        doc.text(`คำตอบที่ถูก: ${q.answer}`, pageMargin, y);
+                        y += lineHeight;
+                    }
+
+                    // คำตอบของคุณ (Your Answer)
+                    const isCorrect = q.select === q.answer;
+                    doc.setTextColor(isCorrect ? 34 : 220, 20, 60); // Green or Red
+                    if (isUrl(q.select)) {
+                        doc.text("คำตอบของคุณ: (รูปภาพด้านล่าง)", pageMargin, y);
+                        y += lineHeight;
+                        try {
+                            const base64Sel = await convertImgToBase64(transformUrl(q.select));
+                            checkPageBreak(45);
+                            doc.addImage(base64Sel, 'JPEG', pageMargin, y, 50, 40);
+                            y += 48;
+                        } catch (e) {
+                            doc.text("[ยังไม่ตอบ]", pageMargin, y);
+                            y += lineHeight;
+                        }
+                    } else {
+                        doc.text(`คำตอบของคุณ: ${q.select || 'ไม่ได้ตอบ'}`, pageMargin, y);
+                        y += lineHeight + itemSpacing;
+                    }
+
+                    // Explanation
+                    doc.setTextColor(100, 100, 100); // Gray
+                    doc.setFontSize(14);
+                    const explainText = `คำอธิบาย: ${q.explain || 'ไม่มี'}`;
+                    const splitExplain = doc.splitTextToSize(explainText, contentWidth);
+                    checkPageBreak(splitExplain.length * (lineHeight - 2));
+                    doc.text(splitExplain, pageMargin, y);
+                    y += (splitExplain.length * (lineHeight - 2)) + blockSpacing;
+
+                    // เส้นคั่น
+                    doc.setDrawColor(220);
+                    doc.line(pageMargin, y - (blockSpacing / 2), pageWidth - pageMargin, y - (blockSpacing / 2));
+                }
+
+                doc.save('MDKKU-Quiz-Result.pdf');
+            }
+
+            // Function 2: Save a practice sheet (all selected questions)
+            async function savePracticeSheetToPdf() {
+                // 1. ตรวจสอบว่าเลือกหัวข้อหรือยัง
+                if (currentQuestions.length === 0) {
+                    alert("กรุณาเลือกหัวข้อข้อสอบก่อนทำการบันทึก");
+                    return;
+                }
+
+                // 2. เตรียมข้อมูลหัวข้อ
+                const selectedTopics = globalStructure.topics
+                    .filter(t => $(`#${t.topicId}`).is(':checked'))
+                    .map(t => t.topicName);
+
+                // 3. ตั้งค่า jsPDF และฟอนต์
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+
+                doc.addFileToVFS('THSarabunNew.ttf', thSarabunBase64);
+                doc.addFont('THSarabunNew.ttf', 'THSarabunNew', 'normal');
+                doc.setFont('THSarabunNew', 'normal');
+
+                // 4. ตัวแปรสำหรับจัดหน้ากระดาษ
+                let y = 15;
+                const pageMargin = 15;
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const contentWidth = pageWidth - (pageMargin * 2);
+                const lineHeight = 7;
+
+                const checkPageBreak = (requiredHeight) => {
+                    if (y + requiredHeight > pageHeight - pageMargin) {
+                        doc.addPage();
+                        y = pageMargin;
+                    }
+                };
+
+                // --- ส่วนหัวกระดาษ (Header) ---
+                doc.setFontSize(20);
+                doc.text("MDKKUQUIZ - ชุดข้อสอบสำหรับทบทวน", pageWidth / 2, y, { align: 'center' });
+                y += 10;
+
+                doc.setFontSize(14);
+                doc.setTextColor(100);
+                doc.text("(เฉลยและคำอธิบายอยู่ท้ายเอกสาร)", pageWidth / 2, y, { align: 'center' });
+                doc.setTextColor(0);
+                y += 15;
+
+                doc.setFontSize(16);
+                const topicsText = `หัวข้อ: ${selectedTopics.join(", ") || "ทั้งหมด"}`;
+                const splitTopics = doc.splitTextToSize(topicsText, contentWidth);
+                doc.text(splitTopics, pageMargin, y);
+                y += (splitTopics.length * lineHeight) + 10;
+
+                // ==========================================
+                // ส่วนที่ 1: รายการคำถาม (Questions)
+                // ==========================================
+                doc.setFontSize(18);
+                doc.text("ส่วนที่ 1: คำถามและตัวเลือก", pageMargin, y);
+                y += lineHeight + 5;
+
+                doc.setFontSize(16);
+
+                for (const [index, q] of currentQuestions.entries()) {
+                    const questionText = `${index + 1}. ${q.problem.replace(/\n/g, ' ')}`;
+
+                    // 1. วาดโจทย์
+                    const splitQuestion = doc.splitTextToSize(questionText, contentWidth);
+                    const textHeight = splitQuestion.length * lineHeight;
+                    checkPageBreak(textHeight + 5);
+
+                    doc.setFont('THSarabunNew', 'normal');
+                    doc.text(splitQuestion, pageMargin, y);
+                    y += textHeight + 2;
+
+                    // 2. วาดรูปโจทย์
+                    if (q.img) {
+                        const imgUrls = q.img.split('///').map(url => url.trim()).filter(Boolean);
+                        for (const imgUrl of imgUrls) {
+                            try {
+                                const base64Img = await convertImgToBase64(transformUrl(imgUrl));
+                                const imgHeight = 60;
+                                checkPageBreak(imgHeight + 5);
+                                doc.addImage(base64Img, 'JPEG', pageMargin + 10, y, 80, imgHeight);
+                                y += imgHeight + 5;
+                            } catch (error) {
+                                checkPageBreak(lineHeight);
+                                doc.setTextColor(255, 0, 0);
+                                doc.text("[ไม่สามารถโหลดรูปภาพโจทย์ได้]", pageMargin + 10, y);
+                                doc.setTextColor(0);
+                                y += lineHeight;
+                            }
+                        }
+                    }
+
+                    // 3. วาดตัวเลือก
+                    const choicesArray = (q.choices || "").split('///').map(s => s.trim());
+                    // Shuffle Choices
+                    for (let i = choicesArray.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [choicesArray[i], choicesArray[j]] = [choicesArray[j], choicesArray[i]];
+                    }
+
+                    for (let i = 0; i < choicesArray.length; i++) {
+                        const prefix = `   ${String.fromCharCode(65 + i)}. `;
+                        const choiceContent = choicesArray[i];
+
+                        if (isUrl(choiceContent)) {
+                            // ตัวเลือกเป็นรูป
+                            const imgChoiceHeight = 45;
+                            checkPageBreak(imgChoiceHeight + 5);
+                            doc.text(prefix, pageMargin, y + 5);
+                            try {
+                                const base64Choice = await convertImgToBase64(transformUrl(choiceContent));
+                                doc.addImage(base64Choice, 'JPEG', pageMargin + 15, y, 50, 40);
+                                y += 42;
+                            } catch (error) {
+                                doc.text("[Image Error]", pageMargin + 15, y + 5);
+                                y += lineHeight;
+                            }
+                        } else {
+                            // ตัวเลือกเป็นข้อความ
+                            const fullText = prefix + choiceContent;
+                            const splitChoice = doc.splitTextToSize(fullText, contentWidth);
+                            const choiceHeight = splitChoice.length * lineHeight;
+                            checkPageBreak(choiceHeight);
+                            doc.text(splitChoice, pageMargin, y);
+                            y += choiceHeight;
+                        }
+                    }
+                    y += 8;
+                }
+
+                // ==========================================
+                // ส่วนที่ 2: เฉลยและคำอธิบาย (แก้ไขส่วนนี้)
+                // ==========================================
+                doc.addPage();
+                y = pageMargin;
+
+                doc.setFontSize(20);
+                doc.text("ส่วนที่ 2: เฉลยและคำอธิบาย", pageWidth / 2, y, { align: 'center' });
+                y += 15;
+
+                for (const [index, q] of currentQuestions.entries()) {
+                    const answerText = q.answer;
+                    const explainText = q.explain || 'ไม่มีคำอธิบาย';
+
+                    // --- เริ่มแสดงเฉลย ---
+                    if (isUrl(answerText)) {
+                        // *** กรณีเฉลยเป็นรูปภาพ ***
+                        const headerText = `${index + 1}. คำตอบ:`;
+
+                        // เช็คหน้ากระดาษ: เผื่อที่สำหรับ "หัวข้อ" + "รูปภาพ"
+                        checkPageBreak(lineHeight + 45);
+
+                        // วาดหัวข้อ (สีเขียว)
+                        doc.setFontSize(16);
+                        doc.setTextColor(0, 100, 0);
+                        doc.text(headerText, pageMargin, y);
+                        y += lineHeight;
+
+                        // วาดรูปคำตอบ
+                        try {
+                            const base64Ans = await convertImgToBase64(transformUrl(answerText));
+                            doc.addImage(base64Ans, 'JPEG', pageMargin + 10, y, 50, 40); // ขนาดรูป 50x40 mm
+                            y += 48; // ขยับลงมาตามความสูงรูป
+                        } catch (error) {
+                            doc.setTextColor(255, 0, 0);
+                            doc.text("[โหลดรูปเฉลยไม่ได้]", pageMargin + 10, y);
+                            doc.setTextColor(0);
+                            y += lineHeight;
+                        }
+
+                    } else {
+                        // *** กรณีเฉลยเป็นข้อความปกติ ***
+                        const fullAnswerLine = `${index + 1}. คำตอบ: ${answerText}`;
+                        checkPageBreak(lineHeight);
+
+                        doc.setFontSize(16);
+                        doc.setTextColor(0, 100, 0); // สีเขียว
+                        doc.text(fullAnswerLine, pageMargin, y);
+                        y += lineHeight;
+                    }
+
+                    // --- แสดงคำอธิบาย ---
+                    const splitExplain = doc.splitTextToSize(`คำอธิบาย: ${explainText}`, contentWidth - 5);
+                    checkPageBreak(splitExplain.length * lineHeight + 8);
+
+                    doc.setFontSize(14);
+                    doc.setTextColor(80, 80, 80); // สีเทา
+                    doc.text(splitExplain, pageMargin + 5, y); // ย่อหน้าเข้ามานิดหน่อย
+                    doc.setTextColor(0); // กลับเป็นสีดำ
+
+                    y += (splitExplain.length * lineHeight) + 8; // เว้นระยะห่างข้อต่อไป
+                }
+
+                // ใส่เลขหน้า
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(10);
+                    doc.setTextColor(150);
+                    doc.text(`หน้า ${i} จาก ${pageCount}`, pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
+                }
+
+                doc.save('MDKKU-Quiz-Practice.pdf');
+            }
+
+            function saveReportToGoogleSheet(from, topic, question, questionImages, allChoices, suggestedChoice, report, time) {
+                const data = {
+                    from: from,
+                    topic: topic,
+                    question: question,
+                    questionImages: questionImages,
+                    allChoices: allChoices,
+                    suggestedChoice: suggestedChoice,
+                    report: report,
+                    time: time
+                };
+                fetch(APPSCRIPT_URL, {
+                    method: "POST", mode: "no-cors",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(data)
+                }).then(response => {
+                    console.log("Report saved to Google Sheet successfully");
+                }).catch(error => {
+                    console.error("Error saving report to Google Sheet:", error);
+                });
+            }
+
+            function addVoteRow() {
+                // ใช้ globalStructure ที่โหลดมาตอนต้น เพื่อสร้าง Dropdown
+                // globalStructure.subjects = [{subjectId, subjectName, ...}]
+                // globalStructure.topics = [{topicId, topicName, subjectRef, accordionGroup}]
+
+                // 1. Create Subject Options
+                // Extract Unique Subjects from structure
+                const subjects = [];
+                const subjectMap = {};
+
+                globalStructure.subjects.forEach(s => {
+                    subjects.push({ id: s.subjectId, name: s.subjectName });
+                    subjectMap[s.subjectId] = s;
+                });
+
+                let subjectOptions = `<option value="">-- เลือกวิชา --</option>`;
+                const uniqueSubjects = {};
+                subjects.forEach(s => {
+                    if (!uniqueSubjects[s.id]) {
+                        uniqueSubjects[s.id] = s;
+                        subjectOptions += `<option value="${s.id}">${s.id} - ${s.name}</option>`;
+                    }
+                });
+
+                const rowHtml = `
+                <div class="vote-row">
+                <button class="btn-remove-row"><i class="fas fa-minus"></i></button>
+                <select class="vote-select subject-select">${subjectOptions}</select>
+                <select class="vote-select group-select" disabled><option value="">-- เลือกกลุ่ม --</option></select>
+                <select class="vote-select topic-select" disabled><option value="">-- เลือกหัวข้อ --</option></select>
+            </div>
+        `;
+
+                const $row = $(rowHtml);
+                $('#vote-rows-container').append($row);
+
+                // Bind Events for Dependent Dropdowns
+                $row.find('.subject-select').on('change', function () {
+                    const subjId = $(this).val();
+                    const $groupSelect = $row.find('.group-select');
+                    const $topicSelect = $row.find('.topic-select');
+
+                    $groupSelect.empty().append('<option value="">-- เลือกกลุ่ม --</option>').prop('disabled', true);
+                    $topicSelect.empty().append('<option value="">-- เลือกหัวข้อ --</option>').prop('disabled', true);
+
+                    if (subjId) {
+                        // Find Accordion Groups belonging to this Subject
+                        // จาก globalStructure.topics ที่มี subjectRef = subjId
+                        const relatedTopics = globalStructure.topics.filter(t => t.subjectRef === subjId);
+                        const groups = [...new Set(relatedTopics.map(t => t.accordionGroup))];
+
+                        groups.forEach(g => {
+                            $groupSelect.append(`<option value="${g}">${g}</option>`);
+                        });
+                        $groupSelect.prop('disabled', false);
+                    }
+                });
+
+                $row.find('.group-select').on('change', function () {
+                    const groupName = $(this).val();
+                    const subjId = $row.find('.subject-select').val();
+                    const $topicSelect = $row.find('.topic-select');
+
+                    $topicSelect.empty().append('<option value="">-- เลือกหัวข้อ --</option>').prop('disabled', true);
+
+                    if (groupName && subjId) {
+                        const topics = globalStructure.topics.filter(t => t.subjectRef === subjId && t.accordionGroup === groupName);
+                        topics.forEach(t => {
+                            $topicSelect.append(`<option value="${t.topicId}">${t.topicName}</option>`);
+                        });
+                        $topicSelect.prop('disabled', false);
+                    }
+                });
+
+                $row.find('.btn-remove-row').on('click', function () {
+                    $(this).parent().remove();
+                });
+            }
+
+            function submitSingleVote(topicId) {
+                submitVoteData([topicId]);
+            }
+
+            function submitVoteData(topicsArray) {
+                // ปิดปุ่มกันกดซ้ำ
+                $('#btn-submit-vote').prop('disabled', true).text('กำลังส่ง...');
+
+                const payload = {
+                    action: 'submitVote',
+                    questionId: current_question.uniqueId,
+                    questionText: current_question.problem,
+                    suggestedTopics: topicsArray
+                };
+
+                fetch(APPSCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload)
+                }).then(() => {
+                    alert("บันทึกข้อมูลเรียบร้อย ขอบคุณครับ! 🙏");
+                    $('#vote-category-modal').fadeOut();
+                    $('#btn-submit-vote').prop('disabled', false).text('ยืนยัน');
+                }).catch(err => {
+                    alert("เกิดข้อผิดพลาด");
+                    $('#btn-submit-vote').prop('disabled', false).text('ยืนยัน');
+                });
+            }
+            // --- EVENT LISTENERS ---
+            // Listener for the new toggle buttons (via hidden checkbox change)
+            $('input[type="checkbox"][name="topics"]').on('change', () => updateQuestionSet());
+
+            $selectedTopicsStatus.on('click', '.status-topic-button', function () {
+                const topicId = $(this).data('topic-id');
+                // Uncheck the original checkbox and trigger change event
+                $(`#${topicId}`).prop('checked', false).trigger('change');
+            });
+
+            $toggleRandomBtn.on('click', function () {
+                isRandomized = !isRandomized;
+
+                // เปลี่ยนข้อความปุ่ม
+                $(this).text(isRandomized ? 'โหมดสุ่ม (คลิกเพื่อเรียงลำดับ)' : 'โหมดเรียงลำดับ (คลิกเพื่อสุ่ม)');
+
+                // เปลี่ยนสีปุ่มเพื่อให้รู้สถานะ (Optional)
+                if (isRandomized) {
+                    $(this).css('background-color', '#e8710a'); // สีส้ม (สุ่ม)
+                } else {
+                    $(this).css('background-color', '#1a73e8'); // สีฟ้า (เรียง)
+                }
+
+                sortCurrentQuestions(); // เรียกฟังก์ชันเรียงใหม่
+                questionIndex = 0;      // รีเซ็ตไปข้อแรก
+                showQuestion();         // แสดงผล
+            });
+
+            $showAllAnswersBtn.on('click', function () {
+                isShowingAllAnswers = !isShowingAllAnswers;
+                if (isShowingAllAnswers) {
+                    $(this).text('ซ่อนเฉลย (Screening)');
+                    $submitBtn.hide();
+                } else {
+                    $(this).text('แสดงเฉลย (Screening)');
+                    $submitBtn.show();
+                }
+                // Refresh the view
+                showQuestion();
+            });
+
+            $('#next-question').on('click', nextQuestion);
+            $('#prev-question').on('click', prevQuestion);
+            $('#submit-btn').on('click', () => {
+                if (current_question.state) return;
+                const selected = $choices.find('button.selected').data('answer');
+                if (!selected) { alert('กรุณาเลือกคำตอบ'); return; }
+
+                current_question.select = selected;
+                current_question.state = true;
+                checkAnswerUI(selected);
+            });
+            // Submission filter listener
+            $('#submission-filter').on('change', function () {
+                showSubmission(this.value);
+            });
+
+            $('#save').on('click', () => {
+                $pdfChoiceModal.fadeIn();
+            });
+            $('#close-pdf-modal-btn').on('click', () => {
+                $pdfChoiceModal.fadeOut();
+            });
+            $('#save-results-pdf-btn').on('click', () => {
+                saveResultsToPdf();
+                $pdfChoiceModal.fadeOut();
+            });
+            $('#save-practice-pdf-btn').on('click', () => {
+                savePracticeSheetToPdf();
+                $pdfChoiceModal.fadeOut();
+            });
+
+            $('#prev-img-btn').on('click', function () {
+                if (currentImageArray.length > 1) {
+                    currentImageIndex--;
+                    if (currentImageIndex < 0) {
+                        currentImageIndex = currentImageArray.length - 1; // วนกลับไปรูปสุดท้าย
+                    }
+                    updateImageGallery();
+                }
+            });
+            $('#next-img-btn').on('click', function () {
+                if (currentImageArray.length > 1) {
+                    currentImageIndex++;
+                    if (currentImageIndex >= currentImageArray.length) {
+                        currentImageIndex = 0; // วนกลับไปรูปแรก
+                    }
+                    updateImageGallery();
+                }
+            });
+
+            $choices.on("click", "button", function () {
+                if (currentQuestions[questionIndex]?.state) return;
+                $(this).addClass("selected").siblings().removeClass("selected");
+            });
+
+            // Search Logic
+            $searchBtn.on('click', performSearch);
+            $searchInput.on('keypress', function (e) {
+                if (e.which === 13) { performSearch(); }
+            });
+
+            // Report Modal Logic
+            $('#report').on('click', () => {
+                if (!current_question || !current_question.problem) {
+                    alert("กรุณาเลือกหัวข้อและไปที่คำถามก่อนทำการ Report");
+                    return;
+                }
+
+                $reportText.val('');
+                $reportNewChoiceInput.val('');
+                $reportCorrectChoiceSelect.empty(); // Clear previous options
+                $('#report-question-images').empty(); // Clear previous question images
+
+                // 1. Populate Question Text
+                const problemText = $question.text();
+                $reportQuestionText.html(problemText.replace(/\n/g, '<br>'));
+
+                // 2. Populate Question Images (NEW)
+                if (current_question.img) {
+                    const imgUrls = current_question.img.split('///').map(s => s.trim()).filter(Boolean);
+                    let imgHtml = '';
+                    imgUrls.forEach(url => {
+                        imgHtml += `<img src="${transformUrl(url)}" class="report-img-preview" alt="Question Image">`;
+                    });
+                    $('#report-question-images').html(imgHtml);
+                }
+
+                // 3. Populate Choices List and Select/Dropdown (UPDATED with Images)
+                const choicesArray = (current_question.choices || "").split("///").map(s => s.trim()).filter(Boolean);
+
+                // สร้าง HTML สำหรับแสดงรายการตัวเลือกใน Modal
+                let choicesHtml = choicesArray.map((choice, index) => {
+                    let choiceContent = choice;
+                    // ตรวจสอบว่าเป็น Link รูปภาพหรือไม่
+                    if (isUrl(choice)) {
+                        choiceContent = `<br><img src="${transformUrl(choice)}" class="report-choice-img" alt="Choice Image">`;
+                    }
+                    return `<p style="margin: 5px 0; font-weight: 500; border-bottom: 1px solid #eee; padding-bottom: 5px;">
+                                <b>${String.fromCharCode(65 + index)}.</b> ${choiceContent}
+                            </p>`;
+                }).join('');
+
+                $reportChoicesList.html(choicesHtml || '<p style="margin: 3px 0; font-weight: 500;">ไม่มีตัวเลือก</p>');
+
+                // สร้าง Dropdown สำหรับเลือกคำตอบที่ถูก (Dropdown แสดงรูปไม่ได้ ให้แสดงเป็น text ว่า [Image Link])
+                let selectOptions = '<option value="newanswer">-- คำตอบใหม่ (ถ้าไม่มีในตัวเลือกเดิม) --</option>';
+                choicesArray.forEach((choice, index) => {
+                    const isCurrentAnswer = choice === current_question.answer;
+                    let displayText = choice;
+                    if (isUrl(choice)) {
+                        displayText = `[รูปภาพ] ...${choice.substring(choice.length - 15)}`; // ย่อลิงก์ใน dropdown
+                    }
+
+                    selectOptions += `<option value="${choice}" ${isCurrentAnswer ? 'selected' : ''}>
+                                        ${String.fromCharCode(65 + index)}. ${displayText} ${isCurrentAnswer ? ' (เฉลยปัจจุบัน)' : ''}
+                                      </option>`;
+                });
+                $reportCorrectChoiceSelect.html(selectOptions);
+
+                $reportCard.fadeIn();
+            });
+
+            $('#submit-report').on('click', () => {
+                // 1. ดึง Topic ID จากข้อปัจจุบัน
+                let currentTopicIds = current_question.category || [];
+                // ถ้าเป็น Array ให้รวมเป็น string, ถ้าไม่มีให้ว่างไว้
+                let topicString = Array.isArray(currentTopicIds) ? currentTopicIds.join(", ") : currentTopicIds;
+
+                // 2. หา "Subject" (วิชา) จาก Topic ID ผ่าน globalStructure
+                let subjectFrom = "Unknown Subject"; // ค่า Default
+
+                if (globalStructure.topics && Array.isArray(currentTopicIds) && currentTopicIds.length > 0) {
+                    // เอา Topic แรกของข้อนี้ไปค้นหาว่าอยู่วิชาอะไร
+                    const matchedTopicInfo = globalStructure.topics.find(t => t.topicId === currentTopicIds[0]);
+                    if (matchedTopicInfo && matchedTopicInfo.subjectRef) {
+                        subjectFrom = matchedTopicInfo.subjectRef; // ได้ค่า เช่น "GI", "NS"
+                    }
+                }
+
+                // 3. ส่วนตรวจสอบ Input (Validation)
+                if ($reportCorrectChoiceSelect.val() === 'newanswer' && !$reportNewChoiceInput.val().trim()) {
+                    alert("กรุณาพิมพ์คำตอบที่ถูกต้องใหม่ในช่องด้านล่าง");
+                    $reportNewChoiceInput.focus();
+                    return;
+                }
+                const reportTextValue = $reportText.val();
+                if (reportTextValue === '') {
+                    alert("กรุณาใส่เหตุผลของปัญหา");
+                    $reportText.focus();
+                    return;
+                }
+
+                // --- ส่วนจัดการข้อมูลก่อนส่ง ---
+
+                // จัดการคำตอบที่เสนอ
+                let suggestedChoice = $reportCorrectChoiceSelect.val() === 'newanswer' ? $reportNewChoiceInput.val().trim() : $reportCorrectChoiceSelect.val();
+                if (suggestedChoice && (suggestedChoice.includes('drive.google') || suggestedChoice.startsWith('http'))) {
+                    suggestedChoice = transformUrl(suggestedChoice);
+                }
+
+                // จัดการรูปโจทย์
+                let questionImagesString = "";
+                if (current_question.img) {
+                    const rawImgs = current_question.img.split("///");
+                    const processedImgs = rawImgs.map(url => transformUrl(url.trim()));
+                    questionImagesString = processedImgs.join("///");
+                }
+
+                // จัดการตัวเลือกทั้งหมด
+                const allChoices = (current_question.choices || "").split("///").map((s, i) => {
+                    const letter = String.fromCharCode(65 + i);
+                    let choiceText = s.trim();
+                    const isCurrentAnswer = s.trim() === (current_question.answer || "").trim();
+                    return `${letter}. ${isCurrentAnswer ? ' (answer)' : ''} ${choiceText}`;
+                }).join("\n");
+
+                // ส่งข้อมูล
+                saveReportToGoogleSheet(
+                    subjectFrom,        // <--- ส่งชื่อวิชาแบบ Dynamic ที่นี่
+                    topicString,        // ส่งหัวข้อของข้อนั้นๆ
+                    $question.text(),
+                    questionImagesString,
+                    allChoices,
+                    suggestedChoice,
+                    reportTextValue,
+                    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" })
+                );
+
+                $reportCard.fadeOut();
+                $feedbackSave.text("ขอบคุณสำหรับรายงานครับ!").show().fadeOut(2000);
+            });
+
+            $('#cancel-report').on('click', () => $reportCard.fadeOut());
+
+            // --- Progress Modal Event Listeners ---
+            $('#show-progress-modal-btn').on('click', () => {
+                $progressModal.fadeIn();
+            });
+
+            $('#close-progress-modal').on('click', () => {
+                $progressModal.fadeOut();
+            });
+
+            $('#modal-export-txt-btn').on('click', function () {
+                const code = generateExportCode();
+                if (!code) return;
+                const blob = new Blob([code], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `quiz-progress-${new Date().toISOString().slice(0, 10)}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                $feedbackSave.text('ไฟล์ .txt ได้ถูกดาวน์โหลดแล้ว').show().fadeOut(2000);
+            });
+
+            $('#modal-export-copy-btn').on('click', function () {
+                const code = generateExportCode();
+                if (!code) return;
+                try {
+                    navigator.clipboard.writeText(code).then(() => {
+                        $feedbackSave.text('คัดลอก Code สำเร็จ!').show().fadeOut(2000);
+                    }, (err) => {
+                        // Fallback: use a temporary textarea
+                        const textarea = document.createElement('textarea');
+                        textarea.value = code;
+                        textarea.style.position = 'fixed';
+                        document.body.appendChild(textarea);
+                        textarea.focus();
+                        textarea.select();
+                        try {
+                            const successful = document.execCommand('copy');
+                            if (successful) {
+                                $feedbackSave.text('คัดลอก Code สำเร็จ!').show().fadeOut(2000);
+                            } else {
+                                $feedbackSave.text('ไม่สามารถคัดลอก Code ได้! โปรดลองอีกครั้ง').show().fadeOut(2000);
+                            }
+                        } catch (copyErr) {
+                            $feedbackSave.text('ไม่สามารถคัดลอกได้').show().fadeOut(2000);
+                            console.error('Fallback: Could not copy text: ', copyErr);
+                        } finally {
+                            document.body.removeChild(textarea);
+                        }
+                    });
+                } catch (err) {
+                    console.error('Could not copy text: ', err);
+                    $feedbackSave.text('การคัดลอกอัตโนมัติไม่สำเร็จ โปรดคัดลอกด้วยตนเอง').show().fadeOut(2000);
+                }
+            });
+
+            $('#modal-import-btn').on('click', function () {
+                const code = $('#modal-import-code').val().trim();
+                if (code) {
+                    applyImportedState(code);
+                } else {
+                    alert('กรุณาวาง Code หรือเลือกไฟล์');
+                }
+            });
+
+            $('#modal-import-file').on('change', function (event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        const code = e.target.result;
+                        $('#modal-import-code').val(code);
+                        // Automatically apply after selecting the file
+                        if (code) {
+                            applyImportedState(code.trim());
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            });
+
+            // --- Vote Modal Event Listeners ---
+            // Open Modal
+            $('#btn-open-vote').on('click', () => {
+                if (!current_question || !current_question.uniqueId) {
+                    alert("กรุณาเลือกข้อสอบก่อน");
+                    return;
+                }
+
+                // A. แสดงโจทย์
+                $('#vote-question-preview').text(current_question.problem.substring(0, 150) + (current_question.problem.length > 150 ? "..." : ""));
+
+                // B. แสดงหัวข้อปัจจุบัน (Approved)
+                renderCurrentTopics();
+
+                // C. แสดงหัวข้อที่คนอื่นเสนอ (Pending) - ต้องดึงจาก API
+                fetchPendingVotes(current_question.uniqueId);
+
+                // D. รีเซ็ตฟอร์มเลือกหัวข้อ
+                $('#vote-rows-container').empty();
+                addVoteRow(); // เพิ่มแถวแรกไว้เสมอ
+
+                $('#vote-category-modal').fadeIn();
+            });
+            $('#btn-close-vote-modal').on('click', () => $('#vote-category-modal').fadeOut());
+            $('#btn-add-vote-row').on('click', addVoteRow);
+            $('#btn-submit-vote').on('click', () => {
+                const votes = [];
+                $('.vote-row').each(function () {
+                    const topicId = $(this).find('.topic-select').val();
+                    if (topicId) {
+                        // เช็ค Unique: อย่าส่งซ้ำกับที่มีอยู่แล้วใน Approved
+                        if (current_question.category.includes(topicId)) {
+                            // ข้าม หรือแจ้งเตือนก็ได้ แต่ในที่นี้จะกรองออกเงียบๆ
+                        } else {
+                            votes.push(topicId);
+                        }
+                    }
+                });
+
+                // Remove duplicates within the submission itself
+                const uniqueVotes = [...new Set(votes)];
+
+                if (uniqueVotes.length === 0) {
+                    alert("กรุณาเลือกหัวข้ออย่างน้อย 1 หัวข้อ (และต้องไม่ซ้ำกับหัวข้อเดิม)");
+                    return;
+                }
+
+                submitVoteData(uniqueVotes);
+            });
+
+            // Keyboard shortcuts
+            $(document).on('keydown', (e) => {
+                if ($reportCard.is(":visible") || $progressModal.is(":visible") || $pdfChoiceModal.is(":visible")) return;
+                if (e.key === 'ArrowRight') nextQuestion();
+                else if (e.key === 'ArrowLeft') prevQuestion();
+                else if (e.key === 'Enter' && $choices.find("button.selected").length > 0) submitQuestion();
+                else if (e.key === ' ' && document.activeElement.tagName === 'BUTTON' && $(document.activeElement).parent().is('#choices')) {
+                    //e.preventDefault();
+                    $(document.activeElement).trigger('click');
+                }
+                else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const currentIndex = $choices.find("button:focus").index();
+                    if (currentIndex > 0) {
+                        $choices.find("button").eq(currentIndex - 1).focus();
+                    }
+                }
+                else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const currentIndex = $choices.find("button:focus").index();
+                    if (currentIndex < $choices.find("button").length - 1) {
+                        $choices.find("button").eq(currentIndex + 1).focus();
+                    }
+                }
+            });
+
+            // --- Floating Action Button Logic ---
+            $('#scroll-to-search-btn').on('click', function () {
+                $('html, body').animate({
+                    scrollTop: $("#search-section").offset().top
+                }, 800);
+            });
+
+            $('#scroll-to-quiz-btn').on('click', function () {
+                $('html, body').animate({
+                    scrollTop: $("#quiz-container").offset().top
+                }, 800);
+            });
+
+            // --- INITIALIZATION ---
+            updateQuestionSet();
+            $toggleRandomBtn.text(isRandomized ? 'โหมดสุ่ม (คลิกเพื่อเรียงลำดับ)' : 'โหมดเรียงลำดับ (คลิกเพื่อสุ่ม)');
+
+        });
+    </script>
+
+</body>
+
+</html>
