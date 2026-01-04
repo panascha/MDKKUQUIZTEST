@@ -1677,9 +1677,29 @@
 
                             // Feature: คลิกที่ Badge เพื่อโหวตทันที (Upvote)
                             $badge.on('click', function () {
-                                if (confirm(`ต้องการโหวตเห็นด้วยกับหัวข้อ "${categoryName}" ใช่ไหม?`)) {
+                                const msg = `ต้องการโหวตเห็นด้วยกับหัวข้อ "${categoryName}" ใช่ไหม?`;
+                                const $confirm = $(`
+                                    <div class="custom-confirm-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                                        <div style="background:#fff;border-radius:8px;padding:16px;max-width:90%;width:360px;box-shadow:0 4px 18px rgba(0,0,0,0.2);">
+                                            <p style="margin:0 0 12px;font-size:15px;color:#222;">${msg}</p>
+                                            <div style="text-align:right;">
+                                                <button class="confirm-no" style="background:#e0e0e0;border:none;padding:8px 12px;border-radius:4px;cursor:pointer;margin-right:8px;">ยกเลิก</button>
+                                                <button class="confirm-yes" style="background:#28a745;color:#fff;border:none;padding:8px 12px;border-radius:4px;cursor:pointer;">ยืนยัน</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `);
+
+                                $('body').append($confirm);
+
+                                $confirm.find('.confirm-no').on('click', function () {
+                                    $confirm.remove();
+                                });
+
+                                $confirm.find('.confirm-yes').on('click', function () {
                                     submitSingleVote(item.categoryId);
-                                }
+                                    $confirm.remove();
+                                });
                             });
 
                             $container.append($badge);
