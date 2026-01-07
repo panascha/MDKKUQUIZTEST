@@ -1606,7 +1606,8 @@
                         // UI Feedback: เปลี่ยนหัวข้อด้านบนให้รู้ว่าอยู่วิชาอะไร
                         if (subjectParam) {
                             // เปลี่ยนข้อความใน h2 ของ .selection-container
-                            $('.selection-container h2').html(`✅ เลือกหัวข้อ (วิชา: <span style="color:var(--color-primary)">${subjectParam}</span>)`);
+                            const subjectName = globalStructure.subjects.find(s => s.subjectId === subjectParam)?.subjectName || subjectParam;
+                            $('.selection-container h2').html(`✅ เลือกหัวข้อ (วิชา: <span style="color:var(--color-primary)">${subjectName}</span>)`);
                         }
 
                         // 3. Fetch Questions (ส่ง subject ไปด้วย เพื่อกรองโจทย์)
