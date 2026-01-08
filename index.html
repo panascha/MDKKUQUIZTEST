@@ -553,7 +553,7 @@
     }
 
     .btn-import {
-        background-color: #fd7e14;
+        background-color: #6f42c1;
     }
 
     .btn-import:hover {
@@ -1584,7 +1584,7 @@
             <button id="report" class="quiz-button">Report Problem</button>
             <button id="btn-open-vote" class="quiz-button"
                 style="background: linear-gradient(to right, #a8e063, #56ab2f); color: white;">
-                <i class="fas fa-tags"></i> ช่วยทำข้อสอบแยกเลค
+                <i class="fas fa-tags"></i> แยกเลคข้อสอบ
             </button>
         </div>
         <!-- <span style="display: block; margin-top: 20px;">
@@ -3067,7 +3067,7 @@
             const contentWidth = pageWidth - (pageMargin * 2);
             const lineHeight = 7;
             const questionFontSize = 16;
-            const categoryFontSize = 14; // NEW: ขนาดฟอนต์สำหรับ Category
+            const categoryFontSize = 12; // NEW: ขนาดฟอนต์สำหรับ Category
 
             const checkPageBreak = (requiredHeight) => {
                 if (y + requiredHeight > pageHeight - pageMargin) {
@@ -3210,7 +3210,7 @@
 
                         // Draw the category suffix next to it (Smaller, Dark Gray)
                         doc.setFontSize(categoryFontSize);
-                        doc.setTextColor(80, 80, 80); // Dark Gray
+                        doc.setTextColor(192, 192, 192); // Light Gray
                         doc.text(categorySuffix, currentX + prefixWidth, currentY);
 
                         currentY += lineHeight; // Move y down by one line height
@@ -3225,7 +3225,7 @@
 
                         // Draw the category suffix on the new line(s)
                         doc.setFontSize(categoryFontSize);
-                        doc.setTextColor(80, 80, 80); // Dark Gray
+                        doc.setTextColor(192, 192, 192); // Light Gray
                         const splitCategorySuffix = doc.splitTextToSize(categorySuffix, contentWidth);
 
                         for (let i = 0; i < splitCategorySuffix.length; i++) {
@@ -3491,7 +3491,7 @@
             if (isRandomized) {
                 $(this).css('background-color', '#e8710a'); // สีส้ม (สุ่ม)
             } else {
-                $(this).css('background-color', '#1a73e8'); // สีฟ้า (เรียง)
+                $(this).css('background-color', '#d32f2f'); // สีแดง (เรียง)
             }
 
             sortCurrentQuestions(); // เรียกฟังก์ชันเรียงใหม่
