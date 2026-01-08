@@ -1471,7 +1471,7 @@
         <div class="info-banner"
             style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 12px 15px; margin-top: 15px; font-size: 1.3rem; color: #856404;font-weight: 900;">
             <strong style="color: #d32f2f; font-size: 1.1rem;">⭐</strong> <span>NEW FEATURE!!!</span>
-            <strong>"ใครวนใจช่วยแยกเลคเชอร์ของข้อสอบเก่า (MCQ,FMT) "</strong> คลิกเลย! → คิดว่าคำถามมาจากเลคเชอร์ไหน
+            <strong>"ใครสนใจช่วยแยกเลคเชอร์ของข้อสอบเก่า (MCQ,FMT) "</strong> คลิกเลย! → คิดว่าคำถามมาจากเลคเชอร์ไหน
             เอาไปใส่เลคนั้นได้เลย
         </div>
     </div>
@@ -1483,7 +1483,7 @@
     <main id="quiz-container">
 
         <h1>Random Quiz | ข้อที่ <span id="questionIndex"></span> | <span id="score"></span></h1>
-                <div id="vote-notification-bar" style="min-height: 40px; margin-bottom: 15px;">
+                <div id="vote-notification-bar" style="min-height: 40px; margin-bottom: 15px;"></div>
 
         <p id="question"></p>
         <div id="image-container-div" style="display: none;">
@@ -1618,6 +1618,7 @@
         const $progressModal = $('#progress-modal-card');
         const $pdfChoiceModal = $('#pdf-choice-modal');
         const $selectedCategoryStatus = $('#selected-category-status');
+        const $voteNotificationBar = $('#vote-notification-bar');
 
         // --- State Variables ---
         let globalStructure = { subjects: [], category: [] };
@@ -1730,6 +1731,8 @@
             $feedback.empty().removeClass();
             $choices.empty();
 
+            $voteNotificationBar.empty();
+
             // Question Text
             $question.html(current_question.problem ? current_question.problem.replace(/\n/g, '<br>') : "");
 
@@ -1771,6 +1774,8 @@
             }
 
             $questionIndex.text(`${questionIndex + 1}/${currentQuestions.length}`);
+
+            renderVoteNotification(current_question.questionId);
 
             setTimeout(() => {
                 $choices.find('button').first().focus();
@@ -1920,6 +1925,68 @@
         // =========================================
         // V. UI & Utility Helpers
         // =========================================
+
+        function renderVoteNotification(questionId) {
+            const $bar = $('#vote-notification-bar');
+            $bar.empty(); // เคลียร์ก่อนทุกครั้ง
+
+            // ไม่แสดงถ้ายังไม่ได้โหลดคำถาม
+            if (!questionId) return;
+
+            fetch(`${APPSCRIPT_URL}?action=getPendingVotes&qid=${questionId}`)
+                .then(res => res.json())
+                .then(data => {
+                    const votes = data.votes || [];
+                    const thresholds = data.thresholds || { approve: 20, confirm: 50 }; // Fallback
+
+                    if (votes.length === 0) {
+                        return; // ไม่มีโหวตที่รอการอนุมัติ
+                    }
+
+                    // หาโหวตที่มีจำนวนสูงสุดในสถานะ Pending/Approved (ที่ไม่ใช่ Verified)
+                    const topVote = votes.reduce((max, current) => {
+                        return (parseInt(current.count) || 0) > (parseInt(max.count) || 0) ? current : max;
+                    }, { count: -1, categoryId: null, status: null });
+
+                    if (!topVote.categoryId) return; // ไม่พบโหวตใดๆ
+
+                    const currentCount = parseInt(topVote.count) || 0;
+                    let target = thresholds.approve;
+                    let statusLabel = 'เพื่ออนุมัติ';
+
+                    // กำหนดเป้าหมายถัดไป
+                    if (topVote.status === 'Approved' || currentCount >= thresholds.approve) {
+                        target = thresholds.confirm;
+                        statusLabel = 'เพื่อยืนยัน';
+                    }
+
+                    const votesRemaining = target - currentCount;
+
+                    // ข้อความแสดง
+                    const statusText = votesRemaining > 0
+                        ? `ขาดอีก <b style="color: #d32f2f;">${votesRemaining}</b> โหวต ${statusLabel}!`
+                        : `<b style="color: #198754;">ครบแล้ว!</b> รอ Admin ตรวจสอบ`;
+
+                    const categoryName = getCategoryNameById(topVote.categoryId);
+
+                    const html = `
+                        <div class="vote-notification-badge" style="margin-top: -10px; margin-bottom: 10px; padding: 8px 15px; border-radius: 20px; 
+                             background-color: #ffe0b2; color: #cc5500; font-weight: 700; display: flex; align-items: center; cursor: pointer;
+                             box-shadow: 0 2px 5px rgba(255, 107, 26, 0.2);"
+                             onclick="$('#btn-open-vote').trigger('click');">
+                            <i class="fas fa-tags" style="margin-right: 5px;"></i>
+                            <span style="font-size: 1.1rem; margin-right: 8px;">"${categoryName}"</span>
+                            <span style="font-size: 0.95rem; font-weight: 600;">${statusText}</span>
+                        </div>
+                    `;
+                    $bar.html(html);
+
+                })
+                .catch(err => {
+                    console.error("Vote Notification Error:", err);
+                    // $bar.html('<p class="small-text" style="color:red">Error loading votes</p>');
+                });
+        }
 
         // --- Category/UI Rendering ---
         function renderAccordionUI(data) {
