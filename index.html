@@ -558,7 +558,7 @@
     }
 
     .btn-import:hover {
-        background-color: #e36a00;
+        background-color: #5a32a3;
     }
 
 
@@ -2457,15 +2457,16 @@
         // =========================================
         // VII. Search Functionality
         // =========================================
-        let isSearchInputTouched = false;
 
         $searchInput.on('focus', function () {
-            if (!isSearchInputTouched) {
-                const input = this;
+            const input = this;
+            // ใช้ data-attribute เพื่อเก็บสถานะว่าเคยมีการใส่ค่าเริ่มต้นแล้วหรือไม่
+            if ($(input).data('initialized') === undefined) {
                 if (input.value === '') {
                     input.value = '" "';
                     // ใช้ setTimeout เพื่อให้ mobile ทำงานได้ดีขึ้น
                     setTimeout(() => {
+                        // โค้ดสำหรับตั้ง cursor ให้อยู่ระหว่าง ""
                         if (input.setSelectionRange) {
                             input.setSelectionRange(1, 2);
                         } else if (input.createTextRange) {
@@ -2477,10 +2478,9 @@
                         }
                     }, 50);
                 }
+                $(input).data('initialized', true); // ตั้งค่าว่าถูก initialize แล้ว
             }
-            isSearchInputTouched = true;
         });
-
         const performSearch = () => {
             let searchTerm = $searchInput.val().trim().toLowerCase();
 
@@ -3921,6 +3921,12 @@
 
         // --- Keyboard shortcuts ---
         $(document).on('keydown', (e) => {
+            if ($searchInput.is(':focus') || $(document.activeElement).is('input, textarea')) return;
+            // ----------------------------------------------------------------------------------------------
+
+            // ควรเพิ่มเช็ค Modal อื่นๆ ด้วย เพื่อความสมบูรณ์ เช่น vote-category-modal, donate-modal-card
+            // if ($reportCard.is(":visible") || $progressModal.is(":visible") || $pdfChoiceModal.is(":visible") || $('#vote-category-modal').is(":visible") || $('#donate-modal-card').is(":visible")) return;
+
             if ($reportCard.is(":visible") || $progressModal.is(":visible") || $pdfChoiceModal.is(":visible")) return;
             if (e.key === 'ArrowRight') nextQuestion();
             else if (e.key === 'ArrowLeft') prevQuestion();
@@ -3944,7 +3950,6 @@
                 }
             }
         });
-
         // --- Floating Action Button Logic ---
         $('#scroll-to-search-btn').on('click', function () {
             $('html, body').animate({
