@@ -1873,7 +1873,14 @@
             $voteNotificationBar.empty();
 
             // Question Text
-            $question.html((current_question.category ? `<small style="color: #666;">[${current_question.category[0]}]</small><br>` : "") + (current_question.problem ? current_question.problem.replace(/\n/g, '<br>') : ""));
+            var categoryName = "";
+            current_question.category.forEach(catId => {
+                const catObj = globalStructure.category.find(c => c.categoryId === catId);
+                if (catObj) {
+                    categoryName += (categoryName ? ", " : "") + catObj.categoryName;
+                }
+            });
+            $question.html((categoryName ? `<small style="color: #666;">[${categoryName}]</small><br>` : "") + (current_question.problem ? current_question.problem.replace(/\n/g, '<br>') : ""));
 
             // Images
             currentImageArray = current_question.img ?
