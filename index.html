@@ -1720,18 +1720,46 @@
 
     $(function () {
 
-        // ฟังก์ชันสำหรับล้าง Cache ของวิชาอื่นๆ เพื่อคืนพื้นที่
-function clearAllQuizCaches() {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('mdkku_quiz_cache_') || key.startsWith('mdkku_quiz_ver_')) {
-            keys.push(key);
+        // ฟังก์ชันจัดการฐานข้อมูล IndexedDB (รองรับข้อมูลขนาดใหญ่)
+        const dbName = "MDKKU_Quiz_DB";
+        const storeName = "quiz_cache";
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        db.createObjectStore(storeName);
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
         }
-    }
-    keys.forEach(key => localStorage.removeItem(key));
-    console.log("All quiz caches cleared to free up space.");
-}
+
+        async function setCacheDB(key, data) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, "readwrite");
+                const store = transaction.objectStore(storeName);
+                store.put(data, key);
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function getCacheDB(key) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, "readonly");
+                const store = transaction.objectStore(storeName);
+                const request = store.get(key);
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
             async function sendWithRetry(payload, retries = 3) {
             for (let i = 0; i < retries; i++) {
                 try {
@@ -1812,77 +1840,66 @@ function clearAllQuizCaches() {
         initApp();
 
         async function initApp() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const subjectParam = urlParams.get('subject') || '';
-    const cacheKey = `mdkku_quiz_cache_${subjectParam}`;
-    const verKey = `mdkku_quiz_ver_${subjectParam}`;
-    
-    const localData = localStorage.getItem(cacheKey);
-    const localVer = localStorage.getItem(verKey);
+            const urlParams = new URLSearchParams(window.location.search);
+            const subjectParam = urlParams.get('subject') || '';
+            const cacheKey = `data_${subjectParam}`;
+            const verKey = `ver_${subjectParam}`;
 
-    $('#loading-overlay').css('display', 'flex');
+            $('#loading-overlay').css('display', 'flex');
 
-    try {
-        const resVer = await fetch(`${APPSCRIPT_URL}?action=checkVersion`);
-        const serverInfo = await resVer.json();
-
-        if (localData && localVer == serverInfo.v) {
-            console.log("Loading from Cache...");
-            const cached = JSON.parse(localData);
-            globalStructure = cached.structure;
-            allQuestions = cached.questions;
-            renderAccordionUI(globalStructure);
-            updateQuestionSet();
-            updateSubjectUI(subjectParam);
-            $('#selected-category-status').html('<p class="small-text" style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> โหลดจาก Cache</p>');
-            finishLoading();
-            return;
-        }
-
-        // โหลดข้อมูลใหม่จาก Server
-        const resStruct = await fetch(`${APPSCRIPT_URL}?action=getStructure&subject=${subjectParam}`);
-        globalStructure = await resStruct.json();
-        renderAccordionUI(globalStructure);
-        updateSubjectUI(subjectParam);
-
-        const resQues = await fetch(`${APPSCRIPT_URL}?action=getQuestions&subject=${subjectParam}`);
-        const questions = await resQues.json();
-        allQuestions = questions.map((q, index) => ({ ...q, _originalIndex: index }));
-
-        // --- ส่วนที่แก้ไข: การบันทึกลง Cache พร้อม Error Handling ---
-        try {
-            localStorage.setItem(cacheKey, JSON.stringify({
-                structure: globalStructure,
-                questions: allQuestions
-            }));
-            localStorage.setItem(verKey, serverInfo.v);
-        } catch (cacheErr) {
-            console.warn("Cache failed, clearing old data and retrying...");
-            // ถ้าพื้นที่เต็ม ให้ลบ Cache ทั้งหมดแล้วลองใหม่
-            clearAllQuizCaches();
             try {
-                localStorage.setItem(cacheKey, JSON.stringify({
-                    structure: globalStructure,
-                    questions: allQuestions
-                }));
-                localStorage.setItem(verKey, serverInfo.v);
-            } catch (retryErr) {
-                // ถ้ายังเต็มอีก (ข้อมูลวิชานี้วิชาเดียวเกิน 5MB) ให้รันแบบไม่มี Cache
-                console.error("Data too large for localStorage. Running without cache.");
+                // 1. ดึงข้อมูลเวอร์ชันและ Cache จาก DB
+                const [resVer, localData, localVer] = await Promise.all([
+                    fetch(`${APPSCRIPT_URL}?action=checkVersion`).then(r => r.json()),
+                    getCacheDB(cacheKey),
+                    getCacheDB(verKey)
+                ]);
+
+                const serverVersion = resVer.v;
+
+                // 2. ตรวจสอบเงื่อนไข Cache
+                if (localData && localVer === serverVersion) {
+                    console.log("🚀 Loading from IndexedDB (No size limit issue)");
+                    globalStructure = localData.structure;
+                    allQuestions = localData.questions;
+
+                    renderAccordionUI(globalStructure);
+                    updateQuestionSet();
+                    updateSubjectUI(subjectParam);
+                    $('#selected-category-status').html('<p class="small-text" style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> โหลดจาก Cache ความเร็วสูง</p>');
+                    finishLoading();
+                    return;
+                }
+
+                // 3. ถ้าไม่มี Cache หรือเวอร์ชันเก่า ให้โหลดใหม่จาก Server
+                console.log("Fetching new data from Server...");
+                const loadingText = subjectParam ? `กำลังโหลดวิชา: <b>${subjectParam}</b> ...` : `กำลังโหลดข้อมูลทั้งหมด...`;
+                $('#selected-category-status').html(`<p class="small-text" style="color: #007bff;"><i class="fas fa-spinner fa-spin"></i> ${loadingText}</p>`);
+
+                const [resStruct, resQues] = await Promise.all([
+                    fetch(`${APPSCRIPT_URL}?action=getStructure&subject=${subjectParam}`).then(r => r.json()),
+                    fetch(`${APPSCRIPT_URL}?action=getQuestions&subject=${subjectParam}`).then(r => r.json())
+                ]);
+
+                globalStructure = resStruct;
+                allQuestions = resQues.map((q, index) => ({ ...q, _originalIndex: index }));
+
+                // 4. บันทึกลง IndexedDB (เก็บได้มหาศาล ไม่ติด QuotaExceeded)
+                await setCacheDB(cacheKey, { structure: globalStructure, questions: allQuestions });
+                await setCacheDB(verKey, serverVersion);
+
+                renderAccordionUI(globalStructure);
+                updateSubjectUI(subjectParam);
+                updateQuestionSet();
+                $('#selected-category-status').html(`<p class="small-text" style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> โหลดและบันทึกข้อมูลใหม่แล้ว</p>`);
+                finishLoading();
+
+            } catch (err) {
+                console.error("Init App Error:", err);
+                $('#selected-category-status').html(`<p class="small-text" style="color:red;"><i class="fas fa-exclamation-triangle"></i> โหลดไม่สำเร็จ กรุณารีเฟรช</p>`);
+                $('#loading-overlay').hide();
             }
         }
-        // -------------------------------------------------------
-
-        updateQuestionSet();
-        $('#selected-category-status').html(`<p class="small-text" style="color:green; font-weight:bold;"><i class="fas fa-check-circle"></i> โหลดจาก Server สำเร็จ</p>`);
-        finishLoading();
-
-    } catch (err) {
-        console.error("Init App Error:", err);
-        $('#selected-category-status').html(`<p class="small-text" style="color:red;">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>`);
-        $('#loading-overlay').hide();
-    }
-}
 
         function updateSubjectUI(subjectParam) {
             if (subjectParam) {
