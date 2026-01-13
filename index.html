@@ -1131,18 +1131,48 @@
     }
 
     table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 2rem;
-        font-size: 1.4rem;
-    }
+    table-layout: auto;
+    width: 100%;
+    margin-top: 2rem;
+    font-size: 1.3rem;
+    border-collapse: collapse;
+}
 
-    table th,
-    table td {
-        border: 1px solid #dee2e6;
-        padding: 0.75rem;
-        text-align: left;
-    }
+table th, table td {
+    border: 1px solid #ddd;
+    padding: 0.75rem;
+    text-align: left;
+    vertical-align: top; /* ให้เนื้อหาเริ่มจากด้านบน */
+    word-wrap: break-word; /* ตัดคำที่ยาวเกินไป */
+    overflow-wrap: break-word;
+    min-width: 80px;
+}
+
+table th:nth-child(2), table td:nth-child(2) { width: 30%; } /* Question */
+table th:nth-child(5), table td:nth-child(5) { width: 25%; } /* Explanation */
+
+.table-img-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 150px; /* จำกัดความกว้างรวมของกลุ่มรูปภาพ */
+}
+
+.table-img-thumb {
+    width: 60px; /* ปรับขนาดรูปในตารางให้เล็กลง */
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.table-img-thumb:hover {
+    transform: scale(3); /* ขยายรูปเมื่อ hover */
+    z-index: 100;
+    position: relative;
+}
 
     table td img.answer-img {
         max-height: 80px;
@@ -1284,12 +1314,13 @@
 
         /* Table Responsiveness */
         table {
-            width: 100%;
-            max-width: 800px;
-            overflow-x: auto;
-            display: block;
-        }
-
+        display: block;
+        overflow-x: auto; /* ยอมให้ scroll แนวนอนได้บนมือถือ */
+        white-space: nowrap; /* ป้องกันบรรทัดตัดกันมั่วซั่ว */
+    }
+ table td {
+        white-space: normal; /* แต่ข้างในเซลล์ยังตัดคำปกติ */
+    }
         /* Image Display */
         #image-container-div {
             width: 80%;
@@ -2573,7 +2604,7 @@
         // --- Results Table ---
         const showSubmission = (filter = 'all') => {
             let rowsHtml = '';
-            // กรองเฉพาะข้อที่ทำแล้ว (state == true)
+            // กรองเฉพาะข้อที่ทำแล้ว
             const filteredQuestions = currentQuestions.slice().reverse().filter(q => {
                 if (!q.state) return false;
                 if (filter === 'correct') return q.select === q.answer;
@@ -2582,7 +2613,7 @@
             });
 
             filteredQuestions.forEach(q => {
-                // ค้นหาชื่อหมวดหมู่
+                // หาชื่อหมวดหมู่
                 let categoryLabel = 'ไม่ระบุ';
                 if (q.category && globalStructure.category) {
                     const firstCatId = Array.isArray(q.category) ? q.category[0] : q.category;
@@ -2590,40 +2621,55 @@
                     if (foundCat) categoryLabel = foundCat.categoryName;
                 }
 
-                                const choicesFormatted = q.choices ? q.choices.split('///').map(c => {
+                // จัดการตัวเลือก (Choices)
+                const choicesFormatted = q.choices ? q.choices.split('///').map(c => {
                     const trimmedC = c.trim();
                     if (isUrl(trimmedC)) {
-                        return `<li><img src="${transformUrl(trimmedC)}" class="search-img-thumb" alt="Choice Image"></li>`;
+                        return `<li><img src="${transformUrl(trimmedC)}" class="table-img-thumb" alt="Choice Image"></li>`;
                     } else {
-                        return `<li>${highlight(trimmedC)}</li>`;
+                        return `<li>${trimmedC}</li>`;
                     }
                 }).join('') : '';
 
-                const explanationText = q.explain ? q.explain.replace(/\n/g, '<br>').replace(/\*+/g, match => '<b>' + '*'.repeat(match.length) + '</b>') : '-';
-                const selectContent = displayAnswerContent(q.select);
-                const answerContent = q.answer;
-                                let problemImageHtml = 'No image';
+                const explanationText = q.explain ? q.explain.replace(/\n/g, '<br>') : '-';
+                const selectContent = isUrl(q.select) ? `<img src="${transformUrl(q.select)}" class="table-img-thumb">` : q.select;
+                const answerContent = isUrl(q.answer) ? `<img src="${transformUrl(q.answer)}" class="table-img-thumb">` : q.answer;
+
+                // จัดการรูปโจทย์ (Problem Images)
+                let problemImageHtml = '';
                 if (q.img) {
                     const imgList = q.img.split('///').map(url => url.trim()).filter(Boolean);
-                    problemImageHtml = imgList.map(url =>
-                        `<a href="${url}" target="_blank"><img src="${transformUrl(url)}" class="search-img-thumb" alt="Q Img"></a>`
-                    ).join(' ');
+                    problemImageHtml = `<div class="table-img-grid">` +
+                        imgList.map(url => `<a href="${url}" target="_blank"><img src="${transformUrl(url)}" class="table-img-thumb" alt="Q Img"></a>`).join('') +
+                        `</div>`;
+                } else {
+                    problemImageHtml = '<span style="color:#ccc">No image</span>';
                 }
+
                 rowsHtml += `
-                    <tr>
-                            <td>${categoryLabel}</td>
-                            <td style="text-align: left;">
-                                <strong>${q.problem.replace(/\n/g, '<br>')}</strong>
-                                <ul style="margin-top: 5px; padding-left: 20px; list-style-type: disc;">
-                                    ${choicesFormatted}
-                                </ul>
-                            </td>
-                            <td>${answerContent}</td>
-                            <td>${q.select === q.answer ? `<span style="color:green">${selectContent}</span>` : `<span style="color:red">${selectContent}</span>`}</td>
-                            <td style="font-weight: 600;">${explanationText}</td>
-                                <td><div style="max-width:150px; max-height:100px; overflow:auto;">${problemImageHtml}</div></td>
-                        </tr>`;
+            <tr>
+                <td style="font-size: 1.1rem;">${categoryLabel}</td>
+                <td>
+                    <div style="font-weight: bold; margin-bottom: 5px;">${q.problem.replace(/\n/g, '<br>')}</div>
+                    <ul style="margin: 0; padding-left: 15px; font-size: 1.1rem; color: #555;">
+                        ${choicesFormatted}
+                    </ul>
+                </td>
+                <td style="text-align: center;">${answerContent}</td>
+                <td style="text-align: center;">
+                    ${q.select === q.answer ?
+                        `<div style="color:green; font-weight:bold;">${selectContent}</div>` :
+                        `<div style="color:red; font-weight:bold;">${selectContent}</div>`}
+                </td>
+                <td style="font-size: 1.3rem; line-height: 1.4;">${explanationText}</td>
+                <td style="text-align: center;">${problemImageHtml}</td>
+            </tr>`;
             });
+
+            if (rowsHtml === '') {
+                rowsHtml = '<tr><td colspan="6" style="text-align:center;">ยังไม่มีข้อมูลการตอบในหัวข้อนี้</td></tr>';
+            }
+
             $tableBody.html(rowsHtml);
         };
 
