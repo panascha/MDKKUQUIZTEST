@@ -2297,9 +2297,27 @@
         }
 
         // --- Category/UI Rendering ---
+        // --- Category/UI Rendering ---
         function renderAccordionUI(data) {
             const $container = $('#dynamic-accordion-area');
             $container.empty();
+
+            // 1. Pre-calculate question counts for each category
+            // สร้าง Map เพื่อนับจำนวนข้อสอบในแต่ละหมวดหมู่
+            const categoryCounts = {};
+
+            if (typeof allQuestions !== 'undefined' && allQuestions.length > 0) {
+                allQuestions.forEach(q => {
+                    // ตรวจสอบว่า category เป็น array หรือค่าเดียว แล้วแปลงเป็น array เสมอ
+                    const cats = Array.isArray(q.category) ? q.category : [q.category];
+
+                    cats.forEach(catId => {
+                        if (catId) {
+                            categoryCounts[catId] = (categoryCounts[catId] || 0) + 1;
+                        }
+                    });
+                });
+            }
 
             // data.subjects = [{year, subjectId, subjectName, accordionGroup}]
             // data.category = [{categoryId, subjectRef, accordionGroup, categoryName}]
@@ -2315,12 +2333,19 @@
 
             // สร้าง HTML
             for (const [groupName, category] of Object.entries(groups)) {
-                let categoryButtons = category.map(t => `
+                let categoryButtons = category.map(t => {
+                    // ดึงจำนวนข้อจากตัวแปรที่นับไว้ (ถ้าไม่มีให้เป็น 0)
+                    const count = categoryCounts[t.categoryId] || 0;
+
+                    return `
                     <input type="checkbox" id="cat-${t.categoryId}" 
                            data-category-id="${t.categoryId}" 
                            name="category" value="${t.categoryId}" hidden>
-                    <label for="cat-${t.categoryId}" class="toggle-button" title="${t.categoryName}">${t.categoryName}</label>
-                `).join('');
+                    <label for="cat-${t.categoryId}" class="toggle-button" title="${t.categoryName} (มี ${count} ข้อ)">
+                        ${t.categoryName} <span style="font-size: 0.85em; opacity: 0.7; margin-left: 3px;">(${count})</span>
+                    </label>
+                `;
+                }).join('');
 
                 let html = `
                     <details class="accordion-group">
@@ -2341,7 +2366,6 @@
                 updateSelectedCategoryStatus();
             });
         }
-
         function renderCurrentCategory() {
             const $container = $('#current-category-container');
             $container.empty();
