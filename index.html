@@ -2681,15 +2681,20 @@
                     $status.html('<p class="small-text" style="color: #007bff;">ยังไม่ได้เลือกหัวข้อ</p>');
                 } else {
                     selected.each(function () {
-                        const label = $(`label[for='${this.id}']`).text();
-                        $status.append(`<button class="status-category-button" data-category-id="${$(this).data('category-id')}" onclick="uncheckCategory('${$(this).data('category-id')}')">${label} <i class="fas fa-times"></i></button>`);
+                        const categoryId = $(this).data('category-id');
+                        const categoryObj = globalStructure.category.find(c => c.categoryId === categoryId);
+                        const labelName = categoryObj ? categoryObj.categoryName : categoryId;
+
+                        $status.append(`<button class="status-category-button" data-category-id="${categoryId}" onclick="uncheckCategory('${categoryId.replace(/'/g, "\\'")}')">${labelName} <i class="fas fa-times"></i></button>`);
                     });
                 }
             }
 
             window.uncheckCategory = function (categoryId) {
-                // ใช้วิธีหา checkbox ที่มี data-category-id ตรงกัน
-                $(`input[data-category-id="${categoryId}"]`).prop('checked', false).trigger('change');
+                const el = document.getElementById(`cat-${categoryId}`);
+                if (el) {
+                    $(el).prop('checked', false).trigger('change');
+                }
             };
 
             // --- Image/URL Handling ---
@@ -2790,7 +2795,10 @@
                     }
                 });
                 const selectedCategory = globalStructure.category
-                    .filter(t => $(`#cat-${t.categoryId}`).is(':checked'))
+                    .filter(t => {
+                        const el = document.getElementById(`cat-${t.categoryId}`);
+                        return el ? el.checked : false;
+                    })
                     .map(t => t.categoryId);
                 const state = {
                     category: selectedCategory,
@@ -2809,7 +2817,8 @@
 
                     $('input[type="checkbox"]').prop('checked', false);
                     state.category.forEach(categoryId => {
-                        $(`#cat-${categoryId}`).prop('checked', true);
+                        const el = document.getElementById(`cat-${categoryId}`);
+                        if (el) el.checked = true;
                     });
 
                     isRandomized = state.isRandom;
