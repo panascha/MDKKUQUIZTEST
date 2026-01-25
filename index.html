@@ -1737,10 +1737,8 @@
                 style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 12px 15px; margin-top: 15px; font-size: 1.5rem; color: #856404;font-weight: 900;">
                 <strong style="color: #d32f2f; font-size: 1.5rem;">⭐</strong> <span style="font-size: 1.5rem;">NEW
                     FEATURE!!!</span>
-                <strong>ใครสนใจช่วย</strong> <strong
-                    style="font-weight: 900; color: #d32f2f;">แยกเลคเชอร์ของข้อสอบเก่า</strong>
-                <strong>(MCQ,FMT)</strong> คลิกเลย! → คิดว่าคำถามมาจากเลคเชอร์ไหน
-                เอาไปใส่เลคนั้นได้เลย
+                <strong style="font-weight: 900; color: #d32f2f;">โหมดทบทวนข้อผิด</strong>
+                <strong>-> จะเอาข้อที่ทำผิดไป Random ไว้ด้านหลังของข้อสอบชุดนั้นจนกว่าจะตอบถูก</strong>
             </div>
         </div>
 
@@ -2265,6 +2263,7 @@
                     $('#quiz-container h1 span[style*="color"]').html(`(ข้อนี้ทำไป: ${current_question.attemptCount} | ผิด: ${current_question.failCount})`);
 
                 if (isReviewMode) {
+                    alert("กำลังแทรกข้อสอบใหม่ ลำดับที่: " + insertAt); 
                     // สร้าง object ใหม่ที่คัดลอกมาจากข้อปัจจุบัน แต่รีเซ็ตสถานะการตอบ
                     const retryQuestion = {
                         ...current_question,
