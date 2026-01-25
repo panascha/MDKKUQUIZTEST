@@ -1722,6 +1722,7 @@
             <div class="controls-container">
                 <button id="save" class="quiz-button">Save to PDF</button>
                 <button id="toggle-random-btn" class="quiz-button">สลับโหมดสุ่ม/เรียงลำดับ</button>
+                <button id="toggle-review-mode-btn" class="quiz-button" style="background-color: #d32f2f;">โหมดทบทวนข้อผิด (Try this!!!): ปิด</button>
                 <button id="show-all-answers-btn" class="quiz-button btn-light">แสดงเฉลย (Screening)</button>
                 <button id="show-progress-modal-btn" class="quiz-button btn-import">บันทึก / ทำต่อจากครั้งก่อน</button>
                 <button id="donate-coffee-btn" class="quiz-button" style="background-color: #6a3906; color: #fff;">
@@ -1995,6 +1996,7 @@
             let isRandomized = true;
             let isShowingAllAnswers = false;
             let isCompactAnswerMode = false;
+            let isReviewMode = false; // โหมดทบทวนคำตอบ
             let pendingVotesCache = {};
             let sessionAutoVoteCount = 0; // นับจำนวนครั้งที่ทำสำเร็จใน Session นี้
             const MAX_AUTO_VOTE = 2;      // จำนวนสูงสุดที่จะเด้งอัตโนมัติ
@@ -2136,6 +2138,23 @@
 
                 current_question = currentQuestions[questionIndex];
 
+                current_question.attemptCount = current_question.attemptCount || 0;
+                current_question.failCount = current_question.failCount || 0;
+
+                let statusColor = "#dc3545"; // สีแดงเริ่มต้น
+                let statusSuffix = "";
+                
+                if (current_question.state && current_question.select === current_question.answer) {
+                    statusColor = "#198754"; // เปลี่ยนเป็นสีเขียว
+                    statusSuffix = " | สถานะ: ทำถูกแล้ว ✅";
+                }
+
+                $('#quiz-container h1').html(`
+                    Random Quiz | ข้อที่ <span id="questionIndex">${questionIndex + 1}/${currentQuestions.length}</span> | 
+                    คะแนน: <span id="score">${score}/${currentQuestions.length}</span> | 
+                    <span style="font-size: 0.8em; color: ${statusColor};">(ข้อนี้ทำไป: ${current_question.attemptCount} | ผิด: ${current_question.failCount}${statusSuffix})</span>
+                `);
+
                 // Reset UI
                 $feedback.empty().removeClass();
                 $choices.empty();
@@ -2231,17 +2250,41 @@
                     return;
                 }
 
+                current_question.attemptCount = (current_question.attemptCount || 0) + 1;
                 currentQuestions[questionIndex].select = selectedAnswer;
                 currentQuestions[questionIndex].state = true;
 
                 if (selectedAnswer === current_question.answer) {
                     score++;
                     $feedback.addClass("correct").html(`ถูกต้อง!: ${displayAnswerContent(current_question.answer)}`);
+                    $('#quiz-container h1 span[style*="color"]').css("color", "#198754")
+                        .html(`(ข้อนี้ทำไป: ${current_question.attemptCount} | ผิด: ${current_question.failCount} | สถานะ: ทำถูกแล้ว ✅)`);
                 } else {
+                    current_question.failCount = (current_question.failCount || 0) + 1;
                     $feedback.addClass("incorrect").html(`ผิด! คำตอบที่ถูกคือ: ${displayAnswerContent(current_question.answer)}`);
-                }
+                    $('#quiz-container h1 span[style*="color"]').html(`(ข้อนี้ทำไป: ${current_question.attemptCount} | ผิด: ${current_question.failCount})`);
 
-                $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+                if (isReviewMode) {
+                    // สร้าง object ใหม่ที่คัดลอกมาจากข้อปัจจุบัน แต่รีเซ็ตสถานะการตอบ
+                    const retryQuestion = {
+                        ...current_question,
+                        state: false,
+                        select: ""
+                    };
+
+                    // สุ่มตำแหน่งวาง (ตั้งแต่ index ปัจจุบัน + 1 ไปจนถึงท้ายสุด)
+                    const min = questionIndex + 1;
+                    const max = currentQuestions.length;
+                    const insertAt = Math.floor(Math.random() * (max - min + 1)) + min;
+
+                    currentQuestions.splice(insertAt, 0, retryQuestion);
+                    // แจ้งเตือนเล็กน้อย
+                    $feedback.append(`<div style="font-size: 0.8em; color: #721c24;">* ข้อนี้ถูกเพิ่มกลับเข้าไปในชุดคำถามเพื่อให้คุณแก้ตัวอีกครั้ง</div>`);
+                }
+            }
+
+                $('#score').text(`${score}/${currentQuestions.length}`);
+                $('#questionIndex').text(`${questionIndex + 1}/${currentQuestions.length}`);
                 highlightAnswers();
                 showSubmission();
 
@@ -2316,40 +2359,56 @@
             }
 
             function updateQuestionSet(shouldSort = true) {
-                // เก็บ state ข้อที่ทำไปแล้ว
+                // 1. เก็บ state ข้อที่ทำไปแล้วใน Session นี้ (เพื่อไม่ให้คะแนนหายเวลาติ๊กเลือกหมวดหมู่เพิ่ม)
                 const previouslyAnswered = {};
                 currentQuestions.forEach(q => {
-                    if (q.state) previouslyAnswered[q.questionId] = { select: q.select, state: q.state };
+                    if (q.state) {
+                        previouslyAnswered[q.questionId] = {
+                            select: q.select,
+                            state: q.state,
+                            attemptCount: q.attemptCount, // เก็บสถิติเดิมไว้ด้วยถ้ายังอยู่ใน session
+                            failCount: q.failCount
+                        };
+                    }
                 });
 
-                // หา ID หัวข้อที่เลือก
+                // 2. หา ID หัวข้อที่เลือกจาก Checkbox
                 const selectedCategoryIds = $('input[type="checkbox"][name="category"]:checked').map(function () {
                     return this.value;
                 }).get();
 
                 currentQuestions = [];
 
+                // 3. กรองคำถามและ "Reset สถิติ" สำหรับข้อที่ดึงมาใหม่
                 if (selectedCategoryIds.length === 0) {
-                    // ถ้าไม่เลือกอะไรเลย (หรือให้โหลดทั้งหมด)
-                    currentQuestions = allQuestions;
+                    // ถ้าไม่เลือกอะไรเลย ให้ใช้ทั้งหมด
+                    currentQuestions = allQuestions.map(q => ({
+                        ...q,
+                        attemptCount: 0,
+                        failCount: 0
+                    }));
                 } else {
-                    // Filter ข้อสอบที่มี category ตรงกับที่เลือก
-                    // allQuestions[i].category คือ Array ของ CategoryID ที่ข้อสอบนั้นอยู่
+                    // Filter ตามหมวดหมู่ และ Map เพื่อเพิ่มตัวแปรสถิติ
                     currentQuestions = allQuestions.filter(q => {
-                        // เช็คว่า Category ของข้อสอบ มีอยู่ใน list ที่เลือกหรือไม่
                         if (!q.category) return false;
-                        // q.category อาจเป็น string หรือ array
                         let cats = Array.isArray(q.category) ? q.category : [q.category];
                         return cats.some(c => selectedCategoryIds.includes(c));
-                    });
+                    }).map(q => ({
+                        ...q,
+                        attemptCount: 0, // เริ่มต้น 0 รอบ
+                        failCount: 0     // เริ่มต้นผิด 0 รอบ
+                    }));
                 }
 
-                // Restore State
+                // 4. คืนค่าสถานะเดิม (Restore State) สำหรับข้อที่เคยทำไปแล้วในหน้าเว็บปัจจุบัน
                 score = 0;
                 currentQuestions.forEach(q => {
                     if (previouslyAnswered[q.questionId]) {
-                        q.select = previouslyAnswered[q.questionId].select;
-                        q.state = previouslyAnswered[q.questionId].state;
+                        const prev = previouslyAnswered[q.questionId];
+                        q.select = prev.select;
+                        q.state = prev.state;
+                        q.attemptCount = prev.attemptCount;
+                        q.failCount = prev.failCount;
                         if (q.state && q.select === q.answer) score++;
                     } else {
                         q.state = false;
@@ -2357,18 +2416,25 @@
                     }
                 });
 
+                // 5. การเรียงลำดับ (สุ่ม หรือ เรียงตาม ID)
                 if (shouldSort) sortCurrentQuestions();
 
-                $score.text(`คะแนน: ${score}/${currentQuestions.length}`);
+                // 6. อัปเดตการแสดงผลคะแนนและจำนวนข้อใน Header
+                $score.text(`${score}/${currentQuestions.length}`);
                 questionIndex = 0;
 
                 if (currentQuestions.length > 0) {
                     $imageContainer.hide();
-                    showQuestion();
+                    showQuestion(); // แสดงคำถามข้อแรกของชุดใหม่
+                } else {
+                    // กรณีไม่พบข้อสอบในหมวดที่เลือก
+                    $question.html("ไม่พบข้อสอบในหมวดหมู่ที่เลือก");
+                    $choices.empty();
+                    $questionIndex.text("0/0");
                 }
+
                 updateSelectedCategoryStatus();
             }
-
 
             // =========================================
             // V. UI & Utility Helpers
@@ -4080,7 +4146,15 @@
                 questionIndex = 0;      // รีเซ็ตไปข้อแรก
                 showQuestion();         // แสดงผล
             });
-
+            $('#toggle-review-mode-btn').on('click', function () {
+                isReviewMode = !isReviewMode;
+                if (isReviewMode) {
+                    $(this).text('โหมดทวนข้อผิด: เปิด').css('background-color', '#28a745');
+                    Swal.fire("เปิดโหมดทวนข้อผิด", "ข้อที่ตอบผิดจะถูกสุ่มกลับมาให้ทำใหม่จนกว่าจะถูก", "info");
+                } else {
+                    $(this).text('โหมดทวนข้อผิด: ปิด').css('background-color', '#d32f2f');
+                }
+            });
             $showAllAnswersBtn.on('click', function () {
                 isShowingAllAnswers = !isShowingAllAnswers;
                 if (isShowingAllAnswers) {
