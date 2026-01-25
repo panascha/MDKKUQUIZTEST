@@ -2263,18 +2263,18 @@
                     $('#quiz-container h1 span[style*="color"]').html(`(ข้อนี้ทำไป: ${current_question.attemptCount} | ผิด: ${current_question.failCount})`);
 
                 if (isReviewMode) {
-                    alert("กำลังแทรกข้อสอบใหม่ ลำดับที่: " + insertAt); 
                     // สร้าง object ใหม่ที่คัดลอกมาจากข้อปัจจุบัน แต่รีเซ็ตสถานะการตอบ
                     const retryQuestion = {
                         ...current_question,
                         state: false,
                         select: ""
                     };
-
+                    
                     // สุ่มตำแหน่งวาง (ตั้งแต่ index ปัจจุบัน + 1 ไปจนถึงท้ายสุด)
                     const min = questionIndex + 1;
                     const max = currentQuestions.length;
                     const insertAt = Math.floor(Math.random() * (max - min + 1)) + min;
+                    alert("กำลังแทรกข้อสอบใหม่ ลำดับที่: " + insertAt); 
 
                     currentQuestions.splice(insertAt, 0, retryQuestion);
                     // แจ้งเตือนเล็กน้อย
