@@ -213,15 +213,13 @@ window.showQuestion = function (shouldFocus = true) {
 
         // ล้างลบตัวเลือกหัวข้อ A-E เดิมที่ติดมาจากฐานข้อมูลออกก่อน (ถ้ามี) เพื่อป้องกันการตีกันของหัวข้อตอนสลับลำดับ
         const cleanChoiceText = choiceText.replace(/^[A-E]\s*[\.\)]\s*/i, "");
-        const prefix = String.fromCharCode(65 + idx) + ". ";
+        const letter = String.fromCharCode(65 + idx);
         let content = cleanChoiceText;
 
         if (window.isUrl(cleanChoiceText)) {
-            content = `${prefix}<img src="${window.transformUrl(cleanChoiceText)}" alt="Choice">`;
+            content = `<img src="${window.transformUrl(cleanChoiceText)}" alt="Choice">`;
         } else if (cleanChoiceText.startsWith('<svg')) {
-            content = `${prefix}<div class="svg-choice-container" style="display:inline-block; vertical-align:middle;">${cleanChoiceText}</div>`;
-        } else {
-            content = prefix + cleanChoiceText;
+            content = `<div class="svg-choice-container" style="display:inline-block; vertical-align:middle;">${cleanChoiceText}</div>`;
         }
         const $btn = $('<button></button>');
         // เก็บคำตอบต้นฉบับเต็มไว้ใช้ตรวจสอบกับคำเฉลย (ห้ามตัด Prefix ออกจากแอตทริบิวต์ data-answer เพื่อความถูกต้องในการตรวจเฉลย)
@@ -229,9 +227,10 @@ window.showQuestion = function (shouldFocus = true) {
         // ลำดับดั้งเดิมใน choicesArray (ไม่ใช่ตำแหน่งที่แสดงผล) — scratchpad.js ผูกลายเส้นไว้กับตัวเลือกนี้
         // ผูกกับ i ทำให้สลับลำดับตัวเลือกกี่ครั้ง ลายเส้นก็ยังตามเนื้อหาตัวเลือกเดิมเสมอ
         $btn.attr('data-oidx', i);
-        // ห่อใน .choice-content เดียว — glossary <span> ที่ markGlossaryTerms แทรก จะอยู่ inline ข้างใน
+        // .choice-badge = วงกลมตัวอักษร A-E — scratchpad.js ใช้เป็นเป้าฝนปากกาเพื่อเลือกคำตอบ
+        // เนื้อหาห่อใน .choice-text เดียว — glossary <span> ที่ markGlossaryTerms แทรก จะอยู่ inline ข้างใน
         // ไม่กลายเป็น flex item แยกของปุ่ม (ปุ่มเป็น display:flex) ที่ทำให้ตัวเลือกแตกเป็นคอลัมน์
-        $btn.html('<span class="choice-content">' + content + '</span>');
+        $btn.html('<span class="choice-badge" data-choice-idx="' + idx + '">' + letter + '</span><span class="choice-text">' + content + '</span>');
 
         if (window.APP.isFastMode && !window.APP.current_question.state && allowedOriginalIndices.length > 0) {
             if (!allowedOriginalIndices.includes(i)) {

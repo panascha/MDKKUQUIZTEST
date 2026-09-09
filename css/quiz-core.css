@@ -212,6 +212,9 @@
         line-height: 1.65;
         color: var(--color-text);
         padding: 12px 20px 8px;
+        width: 100%;
+        box-sizing: border-box;
+        text-align: left;
     }
 
     /* Image container */
@@ -302,16 +305,19 @@
         cursor: pointer;
         transition: all 0.15s ease;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
+        justify-content: flex-start;
         gap: 10px;
         line-height: 1.45;
     }
 
     /* ห่อเนื้อหาตัวเลือกใน flex item เดียว — กัน glossary <span> ที่ markGlossaryTerms แทรกเข้ามา
        ไม่ให้กลายเป็น flex item แยก (จะทำให้ข้อความแตกเป็นคอลัมน์) */
-    #choices button .choice-content {
-        flex: 1 1 auto;
+    #choices button .choice-text {
+        flex: 1;
         min-width: 0;
+        text-align: left;
+        line-height: 1.5;
     }
 
     #choices button img {

@@ -1,9 +1,10 @@
-// scratchpad.js — Scratchpad / Apple Pencil: เขียนบนการ์ดโจทย์ได้เลย (Phase 1: engine + persistence + PDF)
+// scratchpad.js — Scratchpad / Apple Pencil: เขียนบนการ์ดโจทย์ได้เลย (Phase 1: engine + persistence + PDF ; Phase 1b: ฝน badge เลือกคำตอบ)
 // ลายเส้นผูกกับ element ที่เริ่มวาด (anchor) และเก็บพิกัดแบบ normalize ต่อความกว้างของ element นั้น
 // → การ์ดสูงขึ้น/ตัวเลือกสลับที่/รูปโหลดช้า ลายเส้นก็ยังตามเนื้อหาเดิม (ดู Idea/active/scratchpad-apple-pencil-plan.md §3)
 //
 // anchor: 'question' (#question) | 'qimage' (#image-container-div) | 'choice:<oidx>' (ปุ่มตัวเลือกตาม data-oidx) | 'card' (พื้นที่ว่าง)
-// stroke: { tool:'pen'|'highlighter', color, width, aw, anchor, points:[{nx,ny}] } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+// stroke: { tool:'pen'|'highlighter', color, width, aw, anchor, points:[{nx,ny}], causedSelection? } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+//   causedSelection: { qid, previousSelectedAnswer, newSelectedAnswer } เฉพาะ stroke ที่ฝน badge จนเปลี่ยนคำตอบ (undo คืนค่าเดิม)
 // IndexedDB key: scratch_<subjectParam>_<qid> → { qid, subjectParam, strokes, redoStack, updatedAt }
 
 (function () {
@@ -17,12 +18,15 @@
     var PALM_BLOB_PX = 40;           // นิ้ว/ฝ่ามือกว้างเกินนี้ = ฝ่ามือ ไม่วาด
     var SAVE_DEBOUNCE_MS = 300;
     var TOOLBAR_COLLAPSED_KEY = 'scratchpad_toolbar_collapsed';
+    // Phase 1b: ฝนวงกลม .choice-badge เพื่อเลือกคำตอบ — แยกจาก window.OMR_CONFIG (นั่นของกระดาษ OMR/grader.js)
+    var CHOICE_BADGE_RADIUS = 18;    // px รัศมีเป้ารอบจุดกลาง badge (badge กว้าง 30px + เผื่อขอบ)
+    var SHADE_COMMIT_FACTOR = 2.5;   // ความยาวเส้นสะสมใน badge ≥ factor × เส้นผ่านศูนย์กลาง → เลือก (≈ ฝน 4 รอบ)
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
     var tool = 'pen';
     var dpr = 1;
     var active = null;               // stroke ที่กำลังลาก
-    var activeMeta = null;           // { pointerId, wrapLeft, wrapTop, ax, ay, aw, lastX, lastY }
+    var activeMeta = null;           // { pointerId, wrapLeft, wrapTop, ax, ay, aw, lastX, lastY, badges }
     var rafPending = false;
     var saveTimer = null;
     var loadSeq = 0;
@@ -221,6 +225,72 @@
         if (st.strokes.length !== before) { renderAll(); markDirty(); }
     }
 
+    // ─── Bubble-fill: ฝน .choice-badge → เลือกคำตอบ (§6 Q1–Q4) ─
+    function canShadeSelect() {
+        var q = window.APP.current_question;
+        return !!q && q.state !== true;
+    }
+    // snapshot เป้า badge ตอน pointerdown — ข้าม badge ที่ซ่อน (MEQ: #choices.meq-hidden → rect 0) และตัวเลือกที่จางใน Fast Mode
+    function collectBadges(wrapLeft, wrapTop) {
+        var out = [];
+        document.querySelectorAll('#choices button .choice-badge').forEach(function (el) {
+            var btn = el.closest('button');
+            if (!btn || btn.classList.contains('faded-choice')) return;
+            var r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return;
+            out.push({ el: el, btn: btn, cx: r.left + r.width / 2 - wrapLeft, cy: r.top + r.height / 2 - wrapTop, d: r.width, len: 0 });
+        });
+        return out;
+    }
+    function accumulateShade(x1, y1, x2, y2) {
+        var badges = activeMeta.badges;
+        if (!badges || !badges.length) return;
+        var mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        var seg = Math.hypot(x2 - x1, y2 - y1);
+        var top = null;
+        badges.forEach(function (b) {
+            if (Math.hypot(mx - b.cx, my - b.cy) <= CHOICE_BADGE_RADIUS) b.len += seg;
+            if (!top || b.len > top.len) top = b;
+        });
+        badges.forEach(function (b) {
+            b.el.classList.toggle('shading', b === top && b.len >= b.d * SHADE_COMMIT_FACTOR);
+        });
+    }
+    function clearShadingClass() {
+        document.querySelectorAll('#choices .choice-badge.shading').forEach(function (el) { el.classList.remove('shading'); });
+    }
+    function selectedAnswer() {
+        var b = document.querySelector('#choices button.selected');
+        return b ? b.getAttribute('data-answer') : null;
+    }
+    function applySelection(answer) {
+        if (!canShadeSelect()) return;
+        var btns = document.querySelectorAll('#choices button');
+        btns.forEach(function (b) {
+            b.classList.toggle('selected', answer !== null && b.getAttribute('data-answer') === answer);
+        });
+    }
+    // winner-takes-all ตอนปล่อยปากกา — คืน tag ให้ stroke ถ้าเปลี่ยนคำตอบ ไม่งั้น null
+    function commitShade() {
+        var badges = activeMeta.badges;
+        if (!badges || !badges.length || !canShadeSelect()) return null;
+        var top = null;
+        badges.forEach(function (b) { if (!top || b.len > top.len) top = b; });
+        if (!top || top.len < top.d * SHADE_COMMIT_FACTOR) return null;
+        var prev = selectedAnswer();
+        var next = top.btn.getAttribute('data-answer');
+        if (prev === next) return null;
+        applySelection(next);
+        return { qid: window.APP.current_question.questionId, previousSelectedAnswer: prev, newSelectedAnswer: next };
+    }
+    function restoreSelection(stroke, key) {
+        var cs = stroke && stroke.causedSelection;
+        if (!cs) return;
+        var q = window.APP.current_question;
+        if (!q || q.questionId !== cs.qid) return;
+        applySelection(cs[key]);
+    }
+
     // ─── Pointer router ──────────────────────────────────────
     function wantsDraw(e) {
         if (e.pointerType === 'pen') return true;
@@ -258,7 +328,10 @@
             anchor: anchor,
             points: []
         };
-        activeMeta = { pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, ax: rect.x, ay: rect.y, aw: rect.w, lastX: px, lastY: py };
+        activeMeta = {
+            pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, ax: rect.x, ay: rect.y, aw: rect.w, lastX: px, lastY: py,
+            badges: canShadeSelect() ? collectBadges(w.left, w.top) : []
+        };
         active.points.push({ nx: (px - rect.x) / rect.w, ny: (py - rect.y) / rect.w });
         beginCapture(e);
         requestRender();
@@ -277,6 +350,7 @@
         if (activeMeta.erasing) { eraseAt(px, py); return; }
         var dx = px - activeMeta.lastX, dy = py - activeMeta.lastY;
         if (dx * dx + dy * dy < DECIMATE_SQ) return;
+        accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
         activeMeta.lastX = px; activeMeta.lastY = py;
         active.points.push({ nx: (px - activeMeta.ax) / activeMeta.aw, ny: (py - activeMeta.ay) / activeMeta.aw });
         requestRender();
@@ -293,7 +367,10 @@
             if (e.type !== 'pointercancel') {
                 // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation
                 var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
+                accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
                 active.points.push({ nx: (px - activeMeta.ax) / activeMeta.aw, ny: (py - activeMeta.ay) / activeMeta.aw });
+                var caused = commitShade();
+                if (caused) active.causedSelection = caused;
                 var st = state();
                 st.strokes.push(active);
                 st.redoStack = [];
@@ -301,6 +378,7 @@
             }
             active = null;
         }
+        clearShadingClass();
         activeMeta = null;
         renderAll();
     }
@@ -323,16 +401,21 @@
     }
 
     // ─── Undo / Redo / Clear ─────────────────────────────────
+    // Q4: stroke ที่ทำให้เลือกคำตอบ undo แล้วคืนคำตอบเดิม / redo เลือกกลับ ; clearAll ลบเฉพาะลายเส้น ไม่แตะคำตอบ
     function undo() {
         var st = state();
         if (!st || !st.strokes.length) return;
-        st.redoStack.push(st.strokes.pop());
+        var s = st.strokes.pop();
+        st.redoStack.push(s);
+        restoreSelection(s, 'previousSelectedAnswer');
         renderAll(); markDirty();
     }
     function redo() {
         var st = state();
         if (!st || !st.redoStack.length) return;
-        st.strokes.push(st.redoStack.pop());
+        var s = st.redoStack.pop();
+        st.strokes.push(s);
+        restoreSelection(s, 'newSelectedAnswer');
         renderAll(); markDirty();
     }
     function clearAll() {

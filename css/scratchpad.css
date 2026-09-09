@@ -2,15 +2,17 @@
    ========================================= */
 
 /* R1: ล็อกความกว้างการ์ดบนแท็บเล็ต/เดสก์ท็อป — หมุนจอแล้วบรรทัดไม่ตัดใหม่ ลายเส้นไม่เคลื่อน
-   ใช้ 860px เท่า #quiz-container เพื่อไม่ให้การ์ดแคบลงจากเดิม */
+   ใช้ 860px เท่า #quiz-container เพื่อไม่ให้การ์ดแคบลงจากเดิม
+   ห้ามใช้ margin:auto — #quiz-container เป็น flex column, margin auto แกนขวางจะยกเลิก align-items:stretch
+   ทำให้ wrapper หดเท่าเนื้อหาแล้วลูกทุกตัว (#question/#choices/#submit-btn) แคบตาม */
 #quiz-card-wrapper {
     position: relative;
+    width: 100%;
+    box-sizing: border-box;
 }
 @media (min-width: 768px) {
     #quiz-card-wrapper {
         max-width: 860px;
-        margin-left: auto;
-        margin-right: auto;
     }
 }
 
@@ -147,4 +149,97 @@
 /* ธีมมืด */
 [data-theme="dark"] #scratchpad-toolbar {
     border-color: var(--color-border);
+}
+
+/* Phase 1b: .choice-badge — วงกลมตัวอักษร A-E หน้าตัวเลือก เป็นเป้าฝนปากกาเพื่อเลือกคำตอบ (js/scratchpad.js) */
+#choices button .choice-badge {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+    margin-top: 2px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+#choices button:hover .choice-badge {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+/* กำลังฝน: วงเส้นประสีหลัก ให้รู้ว่าใกล้ครบเกณฑ์เลือก */
+#choices button .choice-badge.shading {
+    border-style: dashed;
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-light);
+}
+#choices button.selected .choice-badge {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+#choices button.correct .choice-badge {
+    background: var(--color-correct);
+    border-color: var(--color-correct);
+    color: #fff;
+}
+#choices button.wrong .choice-badge {
+    background: var(--color-wrong);
+    border-color: var(--color-wrong);
+    color: #fff;
+}
+
+/* ธีมมืด — ตัวอักษรบนปุ่มเป็น #f8fafc (themes.css) ให้ badge ไล่ตาม */
+[data-theme="dark"] #choices button .choice-badge {
+    background: #0f172a;
+    border-color: #334155;
+    color: #cbd5e1;
+}
+[data-theme="dark"] #choices button:hover .choice-badge,
+[data-theme="dark"] #choices button .choice-badge.shading {
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+[data-theme="dark"] #choices button .choice-badge.shading {
+    background: rgba(56, 189, 248, 0.15);
+}
+[data-theme="dark"] #choices button.selected .choice-badge {
+    background: #38bdf8;
+    border-color: #38bdf8;
+    color: #0f172a;
+}
+[data-theme="dark"] #choices button.correct .choice-badge {
+    background: #34d399;
+    border-color: #34d399;
+    color: #0f172a;
+}
+[data-theme="dark"] #choices button.wrong .choice-badge {
+    background: #f43f5e;
+    border-color: #f43f5e;
+    color: #fff;
+}
+
+/* ธีม claude — ใช้ตัวแปรเดียวกับ light ทั้งหมด ไม่ต้อง override */
+
+/* ธีม stranger — เส้นขอบหนา 2px ตามสไตล์ปุ่ม */
+[data-theme="stranger"] #choices button .choice-badge {
+    border-width: 2px;
+}
+
+@media (max-width: 767px) {
+    #choices button .choice-badge {
+        width: 28px;
+        height: 28px;
+        font-size: 0.9rem;
+    }
 }
