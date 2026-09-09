@@ -68,6 +68,10 @@
     var TWO_FINGER_GAP_MS = 400;     // สองแตะห่างกันไม่เกินนี้ = double-tap
     var TWO_FINGER_MOVE_PX = 24;     // จุดกึ่งกลางสองนิ้วขยับเกินนี้ = ซูม/เลื่อน ไม่ใช่แตะ
     var ERASER_CURSOR_DASH = [4, 4];
+    // Phase 3 req 7: lasso — เลือก ย้าย ย่อขยาย
+    var LASSO_HANDLE = 10;           // px ด้านของสี่เหลี่ยมมือจับ (และระยะเผื่อตอนแตะ)
+    var LASSO_MIN_PTS = 3;           // ห่วงที่สั้นกว่านี้ไม่ใช่การเลือก
+    var LASSO_MIN_SIZE = 8;          // px ย่อกรอบเล็กกว่านี้ไม่ได้ กันหารศูนย์
 
     var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
@@ -90,6 +94,9 @@
     var lastNonEraserTool = null;    // เครื่องมือก่อนสลับไปยางลบ (Pencil double-tap สลับกลับ)
     var twoFinger = null;            // { t, cx, cy, moved } ระหว่างแตะสองนิ้ว
     var lastTwoFingerTapAt = 0;
+    var selection = null;            // { strokes, tapes, box } — box เป็น px เทียบ wrapper
+    var lassoPath = null;            // [[x,y]...] ห่วงที่กำลังลาก
+    var transform = null;            // { mode, handle, startX, startY, box0, items, tapeItems }
 
     function subjectParam() {
         return new URLSearchParams(window.location.search).get('subject') || 'default';
@@ -305,7 +312,7 @@
         if (!resizeCanvas()) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         var st = state();
-        if (!st) { drawEraserCursor(); return; }
+        if (!st) { drawEraserCursor(); drawLassoUI(); return; }
         var rects = {};
         // เทปวาดก่อนหมึกเสมอ → เทปบังแค่เนื้อหาการ์ด (ใต้ canvas) ลายมือที่เขียนไว้ยังเห็นทับเทป
         st.tapes.forEach(function (t) {
@@ -321,6 +328,7 @@
         });
         if (active && activeMeta) drawStroke(active, { x: activeMeta.ax, y: activeMeta.ay, w: activeMeta.aw }, true);
         drawEraserCursor();
+        drawLassoUI();
     }
 
     var resizeTimer = null;
@@ -347,7 +355,9 @@
         if (!st.strokes.length && !st.redoStack.length && !st.tapes.length) return deleteCacheDB(key).catch(function () { });
         return window.setCacheDB(key, {
             qid: st.qid, subjectParam: st.subjectParam,
-            strokes: st.strokes, redoStack: st.redoStack, tapes: st.tapes, updatedAt: Date.now()
+            strokes: st.strokes, tapes: st.tapes, updatedAt: Date.now(),
+            redoStack: st.redoStack.filter(function (a) { return a && a.t === 'draw' && a.stroke; })
+                                   .map(function (a) { return a.stroke; })
         }).catch(function (e) { console.warn('[Scratchpad] save failed', e); });
     }
 
@@ -366,7 +376,8 @@
     function loadForQuestion(qid) {
         var sp = subjectParam();
         var seq = ++loadSeq;
-        window.APP._scratchpadState = { qid: qid, subjectParam: sp, strokes: [], redoStack: [], tapes: [] };
+        selection = null; lassoPath = null; transform = null;
+        window.APP._scratchpadState = { qid: qid, subjectParam: sp, strokes: [], redoStack: [], tapes: [], actions: [] };
         renderAll();
         updateToolbarState();
         window.getCacheDB(scratchKey(sp, qid)).then(function (rec) {
@@ -375,7 +386,8 @@
             // ผู้ใช้อาจวาดไปแล้วระหว่างรอโหลด — เอาของเก่าไว้ก่อน ต่อด้วยของใหม่
             st.strokes = (rec.strokes || []).concat(st.strokes);
             st.tapes = (rec.tapes || []).concat(st.tapes);
-            if (!st.redoStack.length) st.redoStack = rec.redoStack || [];
+            if (!st.redoStack.length) st.redoStack = (rec.redoStack || []).map(function (x) { return { t: 'draw', stroke: x }; });
+            st.actions = st.strokes.map(function () { return { t: 'draw' }; });
             renderAll();
             updateToolbarState();
         }).catch(function (e) { console.warn('[Scratchpad] load failed', e); });
@@ -453,7 +465,7 @@
             var rect = rects[t.anchor];
             return !rect || !tapeHit(t, rect, px, py);
         });
-        if (st.strokes.length + st.tapes.length !== before) { renderAll(); markDirty(); }
+        if (st.strokes.length + st.tapes.length !== before) { resyncActions(); renderAll(); markDirty(); }
     }
 
     // ─── Scribble-to-erase (Q9) — ลำดับ: แตะเขต badge ไม่นับ → snap ค้าง (ระหว่างลาก) → ขีดฆ่า (ตอนยก) → หมึกธรรมดา ─
@@ -543,6 +555,7 @@
         st.strokes = st.strokes.filter(function (s) { return targets.indexOf(s) === -1; });
         if (tapeTargets.length) st.tapes = st.tapes.filter(function (t) { return tapeTargets.indexOf(t) === -1; });
         for (var i = targets.length - 1; i >= 0; i--) restoreSelection(targets[i], 'previousSelectedAnswer');
+        resyncActions();
         markDirty();
     }
 
@@ -653,6 +666,18 @@
                 pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top,
                 ax: rect.x, ay: rect.y, aw: rect.w, startX: px, startY: py, taping: true
             };
+            beginCapture(e);
+            requestRender();
+            return;
+        }
+
+        // Phase 3 req 7: มือจับ/ในกรอบ = แปลงรูป ; ที่ว่าง = เริ่มลากห่วงเลือกใหม่
+        if (tool === 'lasso') {
+            activeMeta = { pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, lasso: true };
+            var h = handleAt(px, py);
+            if (h) beginTransform('scale', h, px, py);
+            else if (insideBox(px, py)) beginTransform('move', null, px, py);
+            else { selection = null; lassoPath = [[px, py]]; }
             beginCapture(e);
             requestRender();
             return;
@@ -795,6 +820,12 @@
         var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
         if (activeMeta.erasing) { setEraserCursor(px, py); eraseAt(px, py); return; }
         if (activeMeta.taping) { sizeTape(px, py); requestRender(); return; }
+        if (activeMeta.lasso) {
+            if (transform) updateTransform(px, py);
+            else if (lassoPath) lassoPath.push([px, py]);
+            requestRender();
+            return;
+        }
         if (active._snapped) return;   // Q7: snap แล้วล็อกจนยกปากกา
         var dx = px - activeMeta.lastX, dy = py - activeMeta.lastY;
         if (dx * dx + dy * dy < DECIMATE_SQ) return;
@@ -826,6 +857,16 @@
             }
         }
 
+        if (activeMeta.lasso) {
+            if (transform) {
+                if (e.type === 'pointercancel') { applyTransform(transform.box0, transform.box0); transform = null; }
+                else commitTransform();
+            } else if (lassoPath) {
+                if (e.type !== 'pointercancel') selection = buildSelection(lassoPath);
+                lassoPath = null;
+            }
+        }
+
         if (active) {
             if (e.type !== 'pointercancel') {
                 // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation (ยกเว้น stroke ที่ snap แล้ว)
@@ -847,6 +888,7 @@
                     delete active._snapped;
                     var st = state();
                     st.strokes.push(active);
+                    st.actions.push({ t: 'draw' });
                     st.redoStack = [];
                     markDirty();
                 }
@@ -862,6 +904,8 @@
     // ทิ้งเส้น/เทปที่กำลังลากโดยไม่บันทึก — ใช้ตอนนิ้วที่สองแตะลงมา (เป็นท่าทาง ไม่ใช่การวาด)
     function abortActive() {
         if (!activeMeta) return;
+        if (transform) { applyTransform(transform.box0, transform.box0); transform = null; }
+        lassoPath = null;
         clearHold();
         try { canvas.releasePointerCapture(activeMeta.pointerId); } catch (err) { }
         canvas.style.pointerEvents = 'none';
@@ -925,22 +969,226 @@
         else lastTwoFingerTapAt = now;
     }
 
+    // ─── Lasso / Transform (Phase 3 req 7) ───────────────────
+    // เลือกด้วยการลากห่วงล้อม (ต้องล้อมทั้งเส้น/ทั้งแถบเทป) → กรอบ + มือจับ 4 มุม ; ลากในกรอบ = ย้าย ลากมุม = ย่อขยาย
+    // คณิตศาสตร์ทำในหน่วย px บนจอทั้งหมด แล้วเขียนกลับเป็นพิกัดปกติ "ด้วย anchor เดิมของแต่ละเส้น"
+    // ห้ามย้าย anchor — ย้ายแล้วเนื้อหาจัดบรรทัดใหม่ทีไร ลายเส้นจะกระโดดตามของใหม่
+    function pointInPoly(x, y, poly) {
+        var inside = false;
+        for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
+    }
+    function clearSelection() {
+        if (!selection) return;
+        selection = null;
+        requestRender();
+    }
+    function selectionBox(strokes, tapes) {
+        var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }, any = false;
+        strokes.forEach(function (s) {
+            var rect = anchorRect(s.anchor);
+            if (!rect) return;
+            s.points.forEach(function (p) {
+                var x = rect.x + p.nx * rect.w, y = rect.y + p.ny * rect.w;
+                if (x < b.minX) b.minX = x; if (x > b.maxX) b.maxX = x;
+                if (y < b.minY) b.minY = y; if (y > b.maxY) b.maxY = y;
+                any = true;
+            });
+        });
+        tapes.forEach(function (t) {
+            var rect = anchorRect(t.anchor);
+            if (!rect) return;
+            var bx = tapeBox(t, rect);
+            var x1 = Math.min(bx.x, bx.x + bx.w), x2 = Math.max(bx.x, bx.x + bx.w);
+            var y1 = Math.min(bx.y, bx.y + bx.h), y2 = Math.max(bx.y, bx.y + bx.h);
+            if (x1 < b.minX) b.minX = x1; if (x2 > b.maxX) b.maxX = x2;
+            if (y1 < b.minY) b.minY = y1; if (y2 > b.maxY) b.maxY = y2;
+            any = true;
+        });
+        if (!any) return null;
+        return { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY };
+    }
+    function buildSelection(poly) {
+        var st = state();
+        if (!st || poly.length < LASSO_MIN_PTS) return null;
+        var strokes = st.strokes.filter(function (s) {
+            var rect = anchorRect(s.anchor);
+            if (!rect || !s.points.length) return false;
+            return s.points.every(function (p) {
+                return pointInPoly(rect.x + p.nx * rect.w, rect.y + p.ny * rect.w, poly);
+            });
+        });
+        var tapes = st.tapes.filter(function (t) {
+            var rect = anchorRect(t.anchor);
+            if (!rect) return false;
+            var b = tapeBox(t, rect);
+            return [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]
+                .every(function (c) { return pointInPoly(c[0], c[1], poly); });
+        });
+        if (!strokes.length && !tapes.length) return null;
+        var box = selectionBox(strokes, tapes);
+        return box ? { strokes: strokes, tapes: tapes, box: box } : null;
+    }
+    // มือจับ 4 มุม — คืนชื่อมุมที่โดน หรือ null
+    function handleAt(px, py) {
+        if (!selection) return null;
+        var b = selection.box, names = ['nw', 'ne', 'sw', 'se'];
+        var pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]];
+        for (var i = 0; i < 4; i++) {
+            if (Math.abs(px - pts[i][0]) <= LASSO_HANDLE && Math.abs(py - pts[i][1]) <= LASSO_HANDLE) return names[i];
+        }
+        return null;
+    }
+    function insideBox(px, py) {
+        if (!selection) return false;
+        var b = selection.box;
+        return px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
+    }
+    function beginTransform(mode, handle, px, py) {
+        transform = {
+            mode: mode, handle: handle, startX: px, startY: py,
+            box0: { x: selection.box.x, y: selection.box.y, w: selection.box.w, h: selection.box.h },
+            items: selection.strokes.map(function (s) { return { stroke: s, prev: geomOf(s) }; }),
+            tapeItems: selection.tapes.map(function (t) { return { tape: t, prev: tapeGeom(t) }; })
+        };
+    }
+    // คำนวณกรอบใหม่จากการลาก แล้วยิงพิกัดใหม่ทับของจริงทุกเฟรม (พรีวิวสด) โดยคิดจาก snapshot เสมอ
+    function updateTransform(px, py) {
+        transform.dirty = true;
+        var b0 = transform.box0, dx = px - transform.startX, dy = py - transform.startY;
+        var b1;
+        if (transform.mode === 'move') {
+            b1 = { x: b0.x + dx, y: b0.y + dy, w: b0.w, h: b0.h };
+        } else {
+            var x1 = b0.x, y1 = b0.y, x2 = b0.x + b0.w, y2 = b0.y + b0.h;
+            if (transform.handle.charAt(0) === 'n') y1 += dy; else y2 += dy;
+            if (transform.handle.charAt(1) === 'w') x1 += dx; else x2 += dx;
+            b1 = { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+            if (b1.w < LASSO_MIN_SIZE) { b1.w = LASSO_MIN_SIZE; b1.x = b0.x; }
+            if (b1.h < LASSO_MIN_SIZE) { b1.h = LASSO_MIN_SIZE; b1.y = b0.y; }
+        }
+        applyTransform(b0, b1);
+    }
+    function applyTransform(b0, b1) {
+        var sx = b0.w ? b1.w / b0.w : 1, sy = b0.h ? b1.h / b0.h : 1;
+        var scale = Math.sqrt(Math.abs(sx * sy)) || 1;
+        transform.items.forEach(function (it) {
+            var rect = anchorRect(it.stroke.anchor);
+            if (!rect) return;
+            it.stroke.points = it.prev.points.map(function (p) {
+                var x = b1.x + (rect.x + p.nx * rect.w - b0.x) * sx;
+                var y = b1.y + (rect.y + p.ny * rect.w - b0.y) * sy;
+                var o = { nx: (x - rect.x) / rect.w, ny: (y - rect.y) / rect.w };
+                if ('p' in p) o.p = p.p;
+                return o;
+            });
+            it.stroke.width = it.prev.width * scale;
+            outlineCache.delete(it.stroke);   // WeakMap คีย์เป็นตัว stroke — ไม่ล้าง จะวาด outline เก่าค้าง
+        });
+        transform.tapeItems.forEach(function (it) {
+            var rect = anchorRect(it.tape.anchor);
+            if (!rect) return;
+            var x = b1.x + (rect.x + it.prev.nx * rect.w - b0.x) * sx;
+            var y = b1.y + (rect.y + it.prev.ny * rect.w - b0.y) * sy;
+            it.tape.nx = (x - rect.x) / rect.w;
+            it.tape.ny = (y - rect.y) / rect.w;
+            it.tape.nw = it.prev.nw * sx;
+            it.tape.nh = it.prev.nh * sy;
+        });
+        selection.box = b1;
+    }
+    function commitTransform() {
+        var st = state();
+        if (transform.dirty && st) {
+            st.actions.push({ t: 'transform', items: transform.items, tapeItems: transform.tapeItems });
+            st.redoStack = [];
+            markDirty();
+        }
+        transform = null;
+    }
+    function drawLassoUI() {
+        if (tool !== 'lasso') return;
+        ctx.save();
+        if (lassoPath && lassoPath.length > 1) {
+            ctx.setLineDash([5, 4]);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = isDark() ? 'rgba(255,255,255,.9)' : 'rgba(37,99,235,.9)';
+            ctx.beginPath();
+            ctx.moveTo(lassoPath[0][0], lassoPath[0][1]);
+            for (var i = 1; i < lassoPath.length; i++) ctx.lineTo(lassoPath[i][0], lassoPath[i][1]);
+            ctx.closePath();
+            ctx.stroke();
+        }
+        if (selection) {
+            var b = selection.box;
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = isDark() ? 'rgba(147,197,253,.95)' : 'rgba(37,99,235,.95)';
+            ctx.strokeRect(b.x, b.y, b.w, b.h);
+            ctx.setLineDash([]);
+            ctx.fillStyle = isDark() ? '#0f172a' : '#ffffff';
+            var pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]];
+            pts.forEach(function (p) {
+                ctx.beginPath();
+                ctx.rect(p[0] - LASSO_HANDLE / 2, p[1] - LASSO_HANDLE / 2, LASSO_HANDLE, LASSO_HANDLE);
+                ctx.fill();
+                ctx.stroke();
+            });
+        }
+        ctx.restore();
+    }
+
     // ─── Undo / Redo / Clear ─────────────────────────────────
     // Q4: stroke ที่ทำให้เลือกคำตอบ undo แล้วคืนคำตอบเดิม / redo เลือกกลับ ; clearAll ลบเฉพาะลายเส้น ไม่แตะคำตอบ
+    // Phase 3 req 7: undo เป็นรายการ "การกระทำ" แล้ว ไม่ใช่แค่ pop เส้นท้ายสุด — การย้าย/ย่อขยายด้วย
+    // lasso แก้เส้นเดิมในที่ ไม่ได้เพิ่มเส้นใหม่ จึงต้องเก็บพิกัดก่อนหน้าไว้คืน
+    // actions เก็บในหน่วยความจำเท่านั้น (รูปแบบใน IndexedDB ไม่เปลี่ยน) — โหลดใหม่จะสร้างเป็น draw ล้วน
+    // เท่ากับพฤติกรรมเดิมเป๊ะ ; transform ที่ทำก่อนเปลี่ยนข้อ/รีเฟรช จึง undo ไม่ได้ (เหมือนเทปที่ undo ไม่ได้)
+    function geomOf(stroke) { return { points: stroke.points, width: stroke.width }; }
+    function setGeom(stroke, g) { stroke.points = g.points; stroke.width = g.width; outlineCache.delete(stroke); }
+    function tapeGeom(t) { return { nx: t.nx, ny: t.ny, nw: t.nw, nh: t.nh }; }
+    function setTapeGeom(t, g) { t.nx = g.nx; t.ny = g.ny; t.nw = g.nw; t.nh = g.nh; }
+    // ยางลบ/ขีดฆ่าทำให้ index ของ draw marker ไม่ตรงกับ strokes อีก (พฤติกรรมเดิมก็ undo ข้ามอยู่แล้ว)
+    // → รีเซ็ตประวัติให้ตรงกับสภาพจริง ดีกว่าปล่อยให้ undo คืนของผิดตัว
+    function resyncActions() {
+        var st = state();
+        if (!st) return;
+        st.actions = st.strokes.map(function () { return { t: 'draw' }; });
+        st.redoStack = [];
+    }
     function undo() {
         var st = state();
-        if (!st || !st.strokes.length) return;
-        var s = st.strokes.pop();
-        st.redoStack.push(s);
-        restoreSelection(s, 'previousSelectedAnswer');
+        if (!st || !st.actions || !st.actions.length) return;
+        var a = st.actions.pop();
+        if (a.t === 'transform') {
+            a.items.forEach(function (it) { var g = geomOf(it.stroke); setGeom(it.stroke, it.prev); it.next = g; });
+            a.tapeItems.forEach(function (it) { var g = tapeGeom(it.tape); setTapeGeom(it.tape, it.prev); it.next = g; });
+            clearSelection();
+        } else {
+            if (!st.strokes.length) return;
+            var s = st.strokes.pop();
+            a.stroke = s;
+            restoreSelection(s, 'previousSelectedAnswer');
+        }
+        st.redoStack.push(a);
         renderAll(); markDirty();
     }
     function redo() {
         var st = state();
         if (!st || !st.redoStack.length) return;
-        var s = st.redoStack.pop();
-        st.strokes.push(s);
-        restoreSelection(s, 'newSelectedAnswer');
+        var a = st.redoStack.pop();
+        if (a.t === 'transform') {
+            a.items.forEach(function (it) { setGeom(it.stroke, it.next); });
+            a.tapeItems.forEach(function (it) { setTapeGeom(it.tape, it.next); });
+            clearSelection();
+        } else {
+            st.strokes.push(a.stroke);
+            restoreSelection(a.stroke, 'newSelectedAnswer');
+        }
+        st.actions.push(a);
         renderAll(); markDirty();
     }
     function clearAll() {
@@ -953,7 +1201,7 @@
             confirmButtonText: 'ล้าง', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#d33'
         }).then(function (r) {
             if (!r.isConfirmed) return;
-            st.strokes = []; st.redoStack = []; st.tapes = [];
+            st.strokes = []; st.redoStack = []; st.tapes = []; st.actions = []; clearSelection();
             renderAll(); markDirty();
         });
     }
@@ -963,6 +1211,7 @@
     function setTool(t, style) {
         tool = t;
         if (t !== 'eraser') eraserCursor = null;   // เปลี่ยนไปเครื่องมืออื่น วงยางลบต้องหายทันที
+        if (t !== 'lasso') { selection = null; lassoPath = null; }
         if (t === 'pen' && PEN_STYLES[style]) { prefs.penStyle = style; savePrefs(); }
         // ปุ่มที่ไม่ระบุ data-sp-style (ปุ่มปากกาหลักบนแถวบน) = active เมื่อเครื่องมือตรง ไม่สนแบบ
         toolbar.querySelectorAll('.sp-tool, .sp-style-opt').forEach(function (b) {
@@ -1098,7 +1347,7 @@
         var u = toolbar.querySelector('[data-sp-act="undo"]');
         var r = toolbar.querySelector('[data-sp-act="redo"]');
         var c = toolbar.querySelector('[data-sp-act="clear"]');
-        if (u) u.disabled = !st || !st.strokes.length;
+        if (u) u.disabled = !st || !st.actions || !st.actions.length;
         if (r) r.disabled = !st || !st.redoStack.length;
         if (c) c.disabled = !st || (!st.strokes.length && !st.redoStack.length && !st.tapes.length);
     }
@@ -1372,6 +1621,9 @@
             if (zenOn) syncZenWidth();   // หมุนจอตอนอยู่ใน Zen → วัดความกว้างใหม่
             scheduleRender();
         });
+
+        // เปิดให้อ่านการเลือกปัจจุบันได้จากภายนอก (แนวเดียวกับ window.APP._scratchpadState) — ใช้ตอนดีบัก/เทสต์
+        window.APP._scratchpadSelection = function () { return selection; };
 
         initToolbar();
         initModalGuard();
