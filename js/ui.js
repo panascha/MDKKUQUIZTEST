@@ -980,6 +980,9 @@ window.clearAllCategories = function () {
                 const transaction = db.transaction("quiz_cache", "readwrite");
                 const store = transaction.objectStore("quiz_cache");
                 await store.delete(sessionKey);
+                // ลายเส้น scratchpad ของวิชานี้ทั้งหมด (scratch_<subjectParam>_<qid>) — ล้างพร้อมความคืบหน้า
+                const scratchPrefix = `scratch_${subjectParam}_`;
+                await store.delete(IDBKeyRange.bound(scratchPrefix, scratchPrefix + '￿'));
 
                 $('input[type="checkbox"][name="category"]').prop('checked', false);
 

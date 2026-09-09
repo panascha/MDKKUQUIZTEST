@@ -63,6 +63,7 @@
     <link rel="stylesheet" href="css/edit-modal.css">
     <link rel="stylesheet" href="css/fast-mode.css">
     <link rel="stylesheet" href="css/features.css">
+    <link rel="stylesheet" href="css/scratchpad.css">
 </head>
 
 <body>
@@ -1158,6 +1159,24 @@
                 <span>Tip: Double-tap or select any word in the question or choices to translate instantly.</span>
                 <button type="button" id="glossary-tap-hint-close" title="Dismiss">&times;</button>
             </div>
+            <!-- Scratchpad toolbar — ยุบเป็นปุ่มกลมบนจอเล็ก (js/scratchpad.js คุม collapsed ผ่าน localStorage) -->
+            <div id="scratchpad-toolbar" class="collapsed" role="toolbar" aria-label="เครื่องมือเขียนบนโจทย์">
+                <button type="button" class="sp-tool" data-sp-tool="pen" title="ปากกา"><i class="fas fa-pen"></i></button>
+                <button type="button" class="sp-tool" data-sp-tool="highlighter" title="ปากกาเน้นข้อความ"><i class="fas fa-highlighter"></i></button>
+                <button type="button" class="sp-tool" data-sp-tool="eraser" title="ยางลบ"><i class="fas fa-eraser"></i></button>
+                <span class="sp-sep"></span>
+                <button type="button" class="sp-act" data-sp-act="undo" title="ย้อนกลับ"><i class="fas fa-rotate-left"></i></button>
+                <button type="button" class="sp-act" data-sp-act="redo" title="ทำซ้ำ"><i class="fas fa-rotate-right"></i></button>
+                <button type="button" class="sp-act" data-sp-act="clear" title="ล้างทั้งข้อ"><i class="fas fa-trash-alt"></i></button>
+                <span class="sp-sep"></span>
+                <button type="button" class="sp-act" data-sp-act="finger" title="วาดด้วยนิ้ว (เปิด/ปิด)"><i class="fas fa-hand-pointer"></i></button>
+            </div>
+            <button type="button" id="scratchpad-toolbar-toggle" title="เครื่องมือเขียน"><i class="fas fa-pen"></i></button>
+
+            <!-- Annotation surface: ครอบตั้งแต่โจทย์ถึงปุ่มส่งคำตอบ — canvas ทับเป็น overlay (js/scratchpad.js) -->
+            <div id="quiz-card-wrapper">
+                <canvas id="quiz-annotation-canvas"></canvas>
+
             <p id="question"></p>
 
             <div id="image-container-div" style="display: none;">
@@ -1189,6 +1208,8 @@
             <div id="submit-btn-wrapper">
                 <button id="submit-btn" class="quiz-button">ส่งคำตอบ</button>
             </div>
+
+            </div><!-- /#quiz-card-wrapper -->
 
             <p id="feedback"></p>
             <div id="quiz-explain-container" style="margin: 0 20px 10px;"></div>
@@ -1475,6 +1496,7 @@
     <script src="js/chatbot.js"></script>
     <script src="js/glossary.js"></script>
     <script src="js/meq.js"></script>
+    <script src="js/scratchpad.js"></script>
     <script src="js/similar.js"></script>
     <script src="js/study-sets.js"></script>
     <script src="js/vote.js"></script>

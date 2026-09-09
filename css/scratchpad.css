@@ -1,0 +1,150 @@
+/* Scratchpad / Apple Pencil — overlay canvas บนการ์ดโจทย์ + toolbar (js/scratchpad.js)
+   ========================================= */
+
+/* R1: ล็อกความกว้างการ์ดบนแท็บเล็ต/เดสก์ท็อป — หมุนจอแล้วบรรทัดไม่ตัดใหม่ ลายเส้นไม่เคลื่อน
+   ใช้ 860px เท่า #quiz-container เพื่อไม่ให้การ์ดแคบลงจากเดิม */
+#quiz-card-wrapper {
+    position: relative;
+}
+@media (min-width: 768px) {
+    #quiz-card-wrapper {
+        max-width: 860px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+/* canvas ทับทั้งการ์ด — pointer-events ปิดไว้ก่อน js เปิดเฉพาะตอนลากปากกา */
+#quiz-annotation-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+    touch-action: none;
+}
+
+/* ระหว่างมี modal เปิด: ตัด pointer ของ overlay ทิ้ง กันปากกาไปวาดใต้ modal */
+#quiz-card-wrapper.scratchpad-disabled #quiz-annotation-canvas {
+    pointer-events: none !important;
+}
+
+/* โหมดวาดด้วยนิ้วเปิด: ปิด browser gesture บนการ์ด (นิ้วต้องวาด ไม่ใช่เลื่อน) */
+#quiz-card-wrapper.scratchpad-finger {
+    touch-action: none;
+}
+
+/* ระหว่างวาด: กันหน้าเลื่อน/เลือกข้อความบนการ์ด */
+#quiz-card-wrapper.scratchpad-drawing {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Toolbar (desktop: แถวเต็ม อยู่เหนือการ์ด) */
+#scratchpad-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    margin: 0 20px 6px;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-soft);
+    border-radius: 8px;
+    width: fit-content;
+}
+#scratchpad-toolbar .sp-tool,
+#scratchpad-toolbar .sp-act {
+    width: 36px;
+    height: 36px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#scratchpad-toolbar .sp-tool:hover,
+#scratchpad-toolbar .sp-act:hover {
+    background: var(--color-surface-3);
+}
+#scratchpad-toolbar .sp-tool.active,
+#scratchpad-toolbar .sp-act.active {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+#scratchpad-toolbar .sp-act:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+#scratchpad-toolbar .sp-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--color-border);
+    margin: 0 3px;
+}
+#scratchpad-toolbar-toggle {
+    display: none;
+}
+
+/* R7: จอเล็ก — toolbar ลอยมุมขวาล่าง ยุบเหลือปุ่มกลม */
+@media (max-width: 767px) {
+    #scratchpad-toolbar {
+        position: fixed;
+        bottom: 80px;
+        right: 8px;
+        z-index: var(--zi-fab);
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        margin: 0;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+        background: var(--color-surface);
+        transform-origin: bottom right;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    #scratchpad-toolbar.collapsed {
+        transform: scale(0);
+        opacity: 0;
+        pointer-events: none;
+    }
+    #scratchpad-toolbar .sp-sep {
+        width: 22px;
+        height: 1px;
+        margin: 3px 0;
+    }
+    #scratchpad-toolbar-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        bottom: 80px;
+        right: 8px;
+        z-index: calc(var(--zi-fab) + 1);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        color: var(--color-primary);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        cursor: pointer;
+    }
+    /* toolbar กางอยู่ → ซ่อนปุ่มกลม (toolbar ทับตำแหน่งเดียวกัน) */
+    #scratchpad-toolbar:not(.collapsed) + #scratchpad-toolbar-toggle {
+        display: none;
+    }
+}
+
+/* ธีมมืด */
+[data-theme="dark"] #scratchpad-toolbar {
+    border-color: var(--color-border);
+}

@@ -175,9 +175,31 @@ window.saveResultsToPdf = async function () {
     doc.text(`คะแนน: ${window.APP.score}/${save.questions.length}`, pageMargin, y);
     y += blockSpacing;
 
+    // R4: ดึงลายเส้น scratchpad ของวิชานี้ทั้งหมดทีเดียวก่อนเข้าลูป (scratch_<subjectParam>_<qid>) — ไม่ await IndexedDB ทีละข้อ
+    const scratchCache = new Map();
+    try {
+        const scratchPrefix = 'scratch_' + (new URLSearchParams(window.location.search).get('subject') || 'default') + '_';
+        const db = await window.openDB();
+        const records = await new Promise((resolve, reject) => {
+            const req = db.transaction('quiz_cache', 'readonly').objectStore('quiz_cache')
+                .getAll(IDBKeyRange.bound(scratchPrefix, scratchPrefix + '￿'));
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+        records.forEach(rec => { if (rec && rec.qid) scratchCache.set(rec.qid, rec); });
+    } catch (e) { console.warn('[PDF] scratch prefetch failed', e); }
+
     for (const [index, q] of save.questions.entries()) {
         window.updatePdfProgress(index + 1, totalQuestions, startTime);
         if (index % 2 === 0) await new Promise(r => setTimeout(r, 100));
+
+        // ลายเส้นของข้อนี้ (ถ้ามี) — วาดทับบล็อกโจทย์/รูป/ตัวเลือกที่ตรงกับ anchor บนจอ ; anchor 'card' ไม่มีบล็อกให้ทับ ข้ามไป
+        const scratch = scratchCache.get(q.questionId);
+        const drawInk = (anchor, x, top, w) => {
+            if (scratch && typeof window.drawScratchStrokesToPdf === 'function') {
+                window.drawScratchStrokesToPdf(doc, scratch.strokes, anchor, x, top, w);
+            }
+        };
 
         const questionText = `${index + 1}. ${q.problem.replace(/\n/g, ' ')}`;
 
@@ -195,6 +217,7 @@ window.saveResultsToPdf = async function () {
         doc.setFontSize(16);
         doc.setTextColor(0, 0, 0);
         doc.text(splitQuestion, pageMargin, y);
+        drawInk('question', pageMargin, y - 5, contentWidth);
         y += (splitQuestion.length * (lineHeight - 1));
 
         if (categoryDisplay) {
@@ -213,10 +236,11 @@ window.saveResultsToPdf = async function () {
         if (q.img) {
             try {
                 const imgUrls = q.img.split('///').map(url => url.trim()).filter(Boolean);
-                for (const imgUrl of imgUrls) {
+                for (const [imgIdx, imgUrl] of imgUrls.entries()) {
                     const base64Img = await window.convertImgToBase64(window.transformUrl(imgUrl));
                     checkPageBreak(60 + itemSpacing);
                     doc.addImage(base64Img, 'JPEG', pageMargin, y, 80, 60);
+                    if (imgIdx === 0) drawInk('qimage', pageMargin, y, 80); // บนจอ #image-container-div โชว์รูปแรก
                     y += 60 + itemSpacing;
                 }
             } catch (e) { console.error(e); }
@@ -232,6 +256,8 @@ window.saveResultsToPdf = async function () {
             const choice = choicesArray[i];
             const hasPrefix = /^[A-E]\s*[\.\)]/i.test(choice);
             const prefix = hasPrefix ? "" : `${String.fromCharCode(65 + i)}. `;
+            // anchor 'choice:<oidx>' ของ scratchpad นับเฉพาะตัวเลือกที่ไม่ว่าง (quiz-core.js filter(Boolean) ก่อนวาด)
+            const choiceAnchor = 'choice:' + choicesArray.slice(0, i).filter(Boolean).length;
 
             if (choice.startsWith('<svg')) {
                 checkPageBreak(15);
@@ -240,6 +266,7 @@ window.saveResultsToPdf = async function () {
                     const svgB64 = await window.svgToPngBase64(choice, 100, 100);
                     const xOffset = hasPrefix ? 0 : 10;
                     doc.addImage(svgB64, 'PNG', pageMargin + xOffset, y, 10, 10);
+                    drawInk(choiceAnchor, pageMargin, y, contentWidth);
                     y += 12;
                 } catch (e) {
                     doc.text("[SVG]", pageMargin + 10, y + 5);
@@ -253,6 +280,7 @@ window.saveResultsToPdf = async function () {
                     const base64C = await window.convertImgToBase64(window.transformUrl(choice));
                     const xOffset = hasPrefix ? 0 : 10;
                     doc.addImage(base64C, 'JPEG', pageMargin + xOffset, y, 50, 40);
+                    drawInk(choiceAnchor, pageMargin, y, contentWidth);
                     y += 42;
                 } catch (e) {
                     doc.text("[Image Error]", pageMargin + 10, y);
@@ -263,6 +291,7 @@ window.saveResultsToPdf = async function () {
                 const splitC = doc.splitTextToSize(fullText, contentWidth);
                 checkPageBreak(splitC.length * (lineHeight - 2));
                 doc.text(splitC, pageMargin, y);
+                drawInk(choiceAnchor, pageMargin, y - 4, contentWidth);
                 y += splitC.length * (lineHeight - 2) + 2;
             }
         }
