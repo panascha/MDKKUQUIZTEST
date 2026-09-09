@@ -1162,9 +1162,7 @@
             <!-- Scratchpad toolbar สองชั้น: แถวเครื่องมือ + แถว preset ตามเครื่องมือ (js/scratchpad.js คุม state/collapsed/prefs) -->
             <div id="scratchpad-toolbar" class="collapsed" role="toolbar" aria-label="เครื่องมือเขียนบนโจทย์">
                 <div class="sp-row sp-row-tools">
-                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="ball" title="ปากกาลูกลื่น"><i class="fas fa-pen"></i></button>
-                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="fountain" title="ปากกาหมึกซึม"><i class="fas fa-pen-nib"></i></button>
-                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="brush" title="พู่กัน"><i class="fas fa-paint-brush"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-flyout="pen" title="ปากกา (กดค้างเพื่อเลือกแบบ)"><i class="fas fa-pen"></i></button>
                     <button type="button" class="sp-tool" data-sp-tool="highlighter" title="ปากกาเน้นข้อความ"><i class="fas fa-highlighter"></i></button>
                     <button type="button" class="sp-tool" data-sp-tool="tape" title="เทปปิดคำตอบ (ลากคลุมข้อความ แตะเพื่อเปิด)"><i class="fas fa-tape"></i></button>
                     <button type="button" class="sp-tool" data-sp-tool="eraser" title="ยางลบ"><i class="fas fa-eraser"></i></button>
@@ -1181,12 +1179,21 @@
                         <button type="button" class="sp-dot" data-sp-ci="0" title="สี 1 (กดค้างเพื่อเปลี่ยน)"></button>
                         <button type="button" class="sp-dot" data-sp-ci="1" title="สี 2 (กดค้างเพื่อเปลี่ยน)"></button>
                         <button type="button" class="sp-dot" data-sp-ci="2" title="สี 3 (กดค้างเพื่อเปลี่ยน)"></button>
+                        <button type="button" class="sp-slot-edit" data-sp-edit="color" title="เลือกสีเอง"><i class="fas fa-palette"></i></button>
                         <span class="sp-sep"></span>
                         <button type="button" class="sp-pill" data-sp-wi="0" title="บาง (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
                         <button type="button" class="sp-pill" data-sp-wi="1" title="กลาง (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
                         <button type="button" class="sp-pill" data-sp-wi="2" title="หนา (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
+                        <button type="button" class="sp-slot-edit" data-sp-edit="width" title="ปรับความหนาเอง"><i class="fas fa-sliders-h"></i></button>
                     </div>
                     <label class="sp-eraser-opt" hidden><input type="checkbox" id="sp-erase-hl-only"> ลบเฉพาะไฮไลต์</label>
+                    <label class="sp-eraser-size" hidden><span>ขนาดยางลบ</span><input type="range" id="sp-eraser-radius" min="4" max="48" step="2"><output id="sp-eraser-radius-val"></output></label>
+                </div>
+                <!-- แบบปากกา: กดค้าง/คลิกขวาที่ปุ่มปากกาแถวบนเพื่อเปิด (ย้ายมาจากแถวบนเพื่อคืนที่ว่าง) -->
+                <div class="sp-flyout" hidden>
+                    <button type="button" class="sp-style-opt" data-sp-tool="pen" data-sp-style="ball"><i class="fas fa-pen"></i> ลูกลื่น</button>
+                    <button type="button" class="sp-style-opt" data-sp-tool="pen" data-sp-style="fountain"><i class="fas fa-pen-nib"></i> หมึกซึม</button>
+                    <button type="button" class="sp-style-opt" data-sp-tool="pen" data-sp-style="brush"><i class="fas fa-paint-brush"></i> พู่กัน</button>
                 </div>
                 <div class="sp-popover" hidden>
                     <label class="sp-pop-color-wrap"><span>สี</span><input type="color" id="sp-pop-color"></label>

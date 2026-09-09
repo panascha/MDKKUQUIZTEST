@@ -21,9 +21,13 @@
         penStyle: 'ball',
         pen: { colors: ['#2563eb', '#1e1e1e', '#dc2626'], widths: [1.5, 2.5, 5], ci: 0, wi: 1 },
         hl:  { colors: ['#facc15', '#4ade80', '#f472b6'], widths: [12, 18, 28],  ci: 0, wi: 1 },
-        eraseHlOnly: false           // Q11: ยางลบ + ขีดฆ่า ลบเฉพาะไฮไลต์ (canEraseStroke)
+        eraseHlOnly: false,          // Q11: ยางลบ + ขีดฆ่า ลบเฉพาะไฮไลต์ (canEraseStroke)
+        eraserRadius: 12             // Phase 3 req 6: รัศมียางลบปรับได้ (slider ในแถวยางลบ)
     };
     var WIDTH_RANGE = { pen: [0.5, 12], hl: [6, 40] };   // ช่วง slider ใน popover
+    var ERASER_RADIUS_RANGE = [4, 48];
+    // Phase 3 req 3: ปุ่มปากกาปุ่มเดียวบนแถวบน — ไอคอนเปลี่ยนตามแบบที่เลือกอยู่ (แบบย้ายไป flyout)
+    var PEN_ICONS = { ball: 'fas fa-pen', fountain: 'fas fa-pen-nib', brush: 'fas fa-paint-brush' };
     var LONG_PRESS_MS = 500;
     var ERASER_RADIUS = 12;          // px
     var DECIMATE_SQ = 4;             // R6: ข้ามจุดที่ห่างจากจุดก่อน < 2px
@@ -103,6 +107,7 @@
             if (!s || typeof s !== 'object') return p;
             if (PEN_STYLES[s.penStyle]) p.penStyle = s.penStyle;
             if (typeof s.eraseHlOnly === 'boolean') p.eraseHlOnly = s.eraseHlOnly;
+            if (isFinite(s.eraserRadius) && s.eraserRadius >= ERASER_RADIUS_RANGE[0] && s.eraserRadius <= ERASER_RADIUS_RANGE[1]) p.eraserRadius = Number(s.eraserRadius);
             ['pen', 'hl'].forEach(function (k) {
                 var d = p[k], o = s[k];
                 if (!o || typeof o !== 'object') return;
@@ -959,11 +964,15 @@
         tool = t;
         if (t !== 'eraser') eraserCursor = null;   // เปลี่ยนไปเครื่องมืออื่น วงยางลบต้องหายทันที
         if (t === 'pen' && PEN_STYLES[style]) { prefs.penStyle = style; savePrefs(); }
-        toolbar.querySelectorAll('.sp-tool').forEach(function (b) {
-            var on = b.dataset.spTool === t && (t !== 'pen' || b.dataset.spStyle === prefs.penStyle);
+        // ปุ่มที่ไม่ระบุ data-sp-style (ปุ่มปากกาหลักบนแถวบน) = active เมื่อเครื่องมือตรง ไม่สนแบบ
+        toolbar.querySelectorAll('.sp-tool, .sp-style-opt').forEach(function (b) {
+            var on = b.dataset.spTool === t && (!b.dataset.spStyle || b.dataset.spStyle === prefs.penStyle);
             b.classList.toggle('active', on);
         });
+        var penBtn = toolbar.querySelector('[data-sp-flyout="pen"] i');
+        if (penBtn) penBtn.className = PEN_ICONS[prefs.penStyle] || PEN_ICONS.ball;
         hidePopover();
+        hideFlyout();
         renderCtxRow();
         requestRender();       // วงยางลบเพิ่งถูกล้าง/เพิ่งใช้ได้ — ต้องวาด canvas ใหม่
     }
@@ -973,6 +982,7 @@
         toolbar.querySelector('.sp-row-ctx').hidden = !hasPresets && tool !== 'eraser';
         toolbar.querySelector('.sp-presets').hidden = !hasPresets;
         toolbar.querySelector('.sp-eraser-opt').hidden = tool !== 'eraser';
+        toolbar.querySelector('.sp-eraser-size').hidden = tool !== 'eraser';
         if (hasPresets) {
             var pg = presetGroup();
             var scale = tool === 'highlighter' ? 1 / 3 : 1;   // เส้น preview ใน pill (ไฮไลต์หนามาก ย่อให้พอดี)
@@ -988,6 +998,21 @@
         }
         var cb = document.getElementById('sp-erase-hl-only');
         if (cb) cb.checked = !!prefs.eraseHlOnly;
+        var er = document.getElementById('sp-eraser-radius');
+        if (er) {
+            er.min = ERASER_RADIUS_RANGE[0]; er.max = ERASER_RADIUS_RANGE[1];
+            er.value = eraserRadius();
+            document.getElementById('sp-eraser-radius-val').textContent = eraserRadius() + 'px';
+        }
+    }
+    // Phase 3 req 3: flyout เลือกแบบปากกา — คลาสแยกจาก .sp-popover เพราะ hidePopover ใช้ querySelector ตัวแรก
+    function showFlyout() {
+        var f = toolbar.querySelector('.sp-flyout');
+        if (f) f.hidden = false;
+    }
+    function hideFlyout() {
+        var f = toolbar.querySelector('.sp-flyout');
+        if (f) f.hidden = true;
     }
     // Popover แก้ค่าในช่อง (กดค้าง/คลิกขวาที่จุดหรือ pill) — input native: color picker / range
     function showPopover(kind, idx) {
@@ -1032,16 +1057,27 @@
         if (!b) return null;
         return b.classList.contains('sp-dot') ? { kind: 'color', idx: +b.dataset.spCi } : { kind: 'width', idx: +b.dataset.spWi };
     }
+    // กดค้างได้ทั้งช่อง preset (เปิด popover) และปุ่มปากกาหลัก (เปิด flyout เลือกแบบ)
+    function longPressTarget(el) {
+        var p = presetTarget(el);
+        if (p) return { kind: 'preset', preset: p };
+        return el.closest('[data-sp-flyout]') ? { kind: 'flyout' } : null;
+    }
+    function openLongPress(t) {
+        swallowPresetClick = true;
+        if (t.kind === 'flyout') showFlyout();
+        else showPopover(t.preset.kind, t.preset.idx);
+    }
     // กดค้าง 500ms ที่จุด/pill → popover ; ขยับเกิน 8px (เลื่อนแถวบนมือถือ) หรือปล่อยก่อน = ยกเลิก
     function initLongPress() {
         var timer = null, sx = 0, sy = 0;
         function cancel() { if (timer) clearTimeout(timer); timer = null; }
         toolbar.addEventListener('pointerdown', function (e) {
-            var t = presetTarget(e.target);
+            var t = longPressTarget(e.target);
             if (!t) return;
             cancel();
             sx = e.clientX; sy = e.clientY;
-            timer = setTimeout(function () { timer = null; swallowPresetClick = true; showPopover(t.kind, t.idx); }, LONG_PRESS_MS);
+            timer = setTimeout(function () { timer = null; openLongPress(t); }, LONG_PRESS_MS);
         });
         toolbar.addEventListener('pointermove', function (e) {
             if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancel();
@@ -1049,11 +1085,12 @@
         toolbar.addEventListener('pointerup', cancel);
         toolbar.addEventListener('pointercancel', cancel);
         toolbar.addEventListener('contextmenu', function (e) {
-            var t = presetTarget(e.target);
+            var t = longPressTarget(e.target);
             if (!t) return;
             e.preventDefault();
             cancel();
-            showPopover(t.kind, t.idx);
+            if (t.kind === 'flyout') showFlyout();
+            else showPopover(t.preset.kind, t.preset.idx);
         });
     }
     function updateToolbarState() {
@@ -1142,6 +1179,14 @@
         toolbar.addEventListener('click', function (e) {
             if (swallowPresetClick) { swallowPresetClick = false; return; }
             if (!e.target.closest('.sp-popover')) hidePopover();
+            if (!e.target.closest('.sp-flyout, [data-sp-flyout]')) hideFlyout();
+            // ปุ่มปรับค่าเอง — เปิด popover ของ "ช่องที่เลือกอยู่" (เดิมต้องกดค้างเท่านั้น จึงแทบไม่มีใครเจอ)
+            var ed = e.target.closest('.sp-slot-edit');
+            if (ed) {
+                var g = presetGroup();
+                showPopover(ed.dataset.spEdit, ed.dataset.spEdit === 'color' ? g.ci : g.wi);
+                return;
+            }
             var pt = presetTarget(e.target);
             if (pt) {
                 var pg = presetGroup();
@@ -1165,6 +1210,16 @@
             prefs.eraseHlOnly = e.target.checked;
             savePrefs();
         });
+        // Phase 3 req 6: ลากแล้ววงยางลบโตตามทันที แต่เขียน localStorage ตอนปล่อย (input ยิงทุกเฟรม)
+        var erIn = document.getElementById('sp-eraser-radius');
+        erIn.addEventListener('input', function (e) {
+            var v = parseFloat(e.target.value);
+            if (!(v > 0)) return;
+            prefs.eraserRadius = v;
+            document.getElementById('sp-eraser-radius-val').textContent = v + 'px';
+            requestRender();
+        });
+        erIn.addEventListener('change', savePrefs);
         initLongPress();
         setTool('pen', prefs.penStyle);
         updateToolbarState();
@@ -1181,6 +1236,7 @@
         document.addEventListener('click', function (e) {
             if (toolbar.contains(e.target) || e.target === toggle || toggle.contains(e.target)) return;
             hidePopover();
+            hideFlyout();
             if (zenOn) return;       // Zen: toolbar ต้องกางไว้ ไม่งั้นปุ่มออกหาย
             if (window.innerWidth >= 768) return;
             if (toolbar.classList.contains('collapsed')) return;
