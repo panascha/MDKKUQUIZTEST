@@ -19,7 +19,7 @@
         penStyle: 'ball',
         pen: { colors: ['#2563eb', '#1e1e1e', '#dc2626'], widths: [1.5, 2.5, 5], ci: 0, wi: 1 },
         hl:  { colors: ['#facc15', '#4ade80', '#f472b6'], widths: [12, 18, 28],  ci: 0, wi: 1 },
-        eraseHlOnly: false           // step 4 (Q11) ต่อเข้า canEraseStroke — ตอนนี้แค่จำค่า
+        eraseHlOnly: false           // Q11: ยางลบ + ขีดฆ่า ลบเฉพาะไฮไลต์ (canEraseStroke)
     };
     var WIDTH_RANGE = { pen: [0.5, 12], hl: [6, 40] };   // ช่วง slider ใน popover
     var LONG_PRESS_MS = 500;
@@ -43,6 +43,12 @@
     var SNAP_MIN_BBOX = 24;          // px กรอบเส้นต้องกว้างหรือสูงอย่างน้อยเท่านี้ถึงจะเริ่มจับเวลา
     var ELLIPSE_PTS = 40;
     var RECT_EDGE_PTS = 12;          // มุมสี่เหลี่ยมต้องมีจุดถี่ ไม่งั้น streamline ของ perfect-freehand ดึงมุมจนเบี้ยว
+    // Phase 2 §8 Q9: ขีดฆ่า (zigzag) ทับเส้นเดิมด้วยปากกา → ลบเส้นนั้นแทนการวาด — ประเมินตอนยกปากกา (ค่าเหล่านี้ยังต้องจูนบน iPad จริง)
+    var SCRIBBLE_MIN_PTS = 8;
+    var SCRIBBLE_MIN_REVERSALS = 3;  // จำนวนครั้งที่ทิศทางกลับ (แกน x หรือ y)
+    var SCRIBBLE_MIN_SWING = 0.3;    // แต่ละช่วงไป-กลับต้องยาว ≥ 30% ของกรอบในแกนนั้น ไม่งั้นนับเป็นมือสั่น
+    var SCRIBBLE_DENSITY = 2.5;      // ความยาวเส้นรวม ≥ 2.5 × เส้นทแยงกรอบ — ตัว w / ห่วงเดียวไม่ผ่าน
+    var SCRIBBLE_MIN_HITS = 3;       // จุดตัวอย่างของ zigzag ที่โดนเส้นเป้า ≥ เท่านี้ (หรือเส้นเป้าอยู่ในกรอบ zigzag ทั้งเส้น)
     var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
@@ -296,17 +302,87 @@
         }
         return false;
     }
+    // Q11: ตัวกรองเดียวใช้ทั้งยางลบและขีดฆ่า — "ลบเฉพาะไฮไลต์" ปล่อยเส้นปากกาไว้
+    function canEraseStroke(stroke) {
+        return !prefs.eraseHlOnly || stroke.tool === 'highlighter';
+    }
     function eraseAt(px, py) {
         var st = state();
         if (!st) return;
         var rects = {};
         var before = st.strokes.length;
         st.strokes = st.strokes.filter(function (stroke) {
+            if (!canEraseStroke(stroke)) return true;
             if (!(stroke.anchor in rects)) rects[stroke.anchor] = anchorRect(stroke.anchor);
             var rect = rects[stroke.anchor];
             return !rect || !strokeHit(stroke, rect, px, py);
         });
         if (st.strokes.length !== before) { renderAll(); markDirty(); }
+    }
+
+    // ─── Scribble-to-erase (Q9) — ลำดับ: แตะเขต badge ไม่นับ → snap ค้าง (ระหว่างลาก) → ขีดฆ่า (ตอนยก) → หมึกธรรมดา ─
+    // นับเฉพาะปากกา: ไฮไลต์ zigzag ทับตัวหนังสือคือการเน้น ไม่ใช่การลบ
+    function isScribble(raw) {
+        var n = raw.length;
+        if (n < SCRIBBLE_MIN_PTS) return false;
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, len = 0, i;
+        for (i = 0; i < n; i++) {
+            var x = raw[i][0], y = raw[i][1];
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            if (i) len += Math.hypot(x - raw[i - 1][0], y - raw[i - 1][1]);
+        }
+        var bw = maxX - minX, bh = maxY - minY;
+        if (len < SCRIBBLE_DENSITY * Math.hypot(bw, bh)) return false;
+        // นับการกลับทิศต่อแกน — สะสมระยะทางเดียวกัน แล้วนับกลับทิศเมื่อช่วงที่ผ่านมายาวพอ (กันมือสั่น)
+        function reversals(axis, extent) {
+            var minSwing = extent * SCRIBBLE_MIN_SWING;
+            if (minSwing <= 0) return 0;
+            var dir = 0, swing = 0, count = 0;
+            for (var k = 1; k < n; k++) {
+                var d = raw[k][axis] - raw[k - 1][axis];
+                if (d === 0) continue;
+                var sgn = d > 0 ? 1 : -1;
+                if (sgn === dir || dir === 0) { dir = sgn; swing += Math.abs(d); continue; }
+                if (swing >= minSwing) count++;
+                dir = sgn; swing = Math.abs(d);
+            }
+            return count;
+        }
+        return Math.max(reversals(0, bw), reversals(1, bh)) >= SCRIBBLE_MIN_REVERSALS;
+    }
+    // คืน array เส้นที่ควรลบ (ว่าง = ไม่ใช่ขีดฆ่า / ไม่มีเส้นให้ลบ → วาดเป็นหมึกตามปกติ)
+    function scribbleTargets(raw) {
+        var st = state();
+        if (!st || !st.strokes.length || !isScribble(raw)) return [];
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, i;
+        for (i = 0; i < raw.length; i++) {
+            if (raw[i][0] < minX) minX = raw[i][0]; if (raw[i][0] > maxX) maxX = raw[i][0];
+            if (raw[i][1] < minY) minY = raw[i][1]; if (raw[i][1] > maxY) maxY = raw[i][1];
+        }
+        var rects = {}, out = [];
+        st.strokes.forEach(function (stroke) {
+            if (!canEraseStroke(stroke)) return;
+            if (!(stroke.anchor in rects)) rects[stroke.anchor] = anchorRect(stroke.anchor);
+            var rect = rects[stroke.anchor];
+            if (!rect) return;
+            var inside = true, hits = 0, k;
+            for (k = 0; k < stroke.points.length && inside; k++) {
+                var x = rect.x + stroke.points[k].nx * rect.w, y = rect.y + stroke.points[k].ny * rect.w;
+                if (x < minX || x > maxX || y < minY || y > maxY) inside = false;
+            }
+            if (!inside) for (k = 0; k < raw.length && hits < SCRIBBLE_MIN_HITS; k++) {
+                if (strokeHit(stroke, rect, raw[k][0], raw[k][1])) hits++;
+            }
+            if (inside || hits >= SCRIBBLE_MIN_HITS) out.push(stroke);
+        });
+        return out;
+    }
+    function scribbleErase(targets) {
+        var st = state();
+        st.strokes = st.strokes.filter(function (s) { return targets.indexOf(s) === -1; });
+        for (var i = targets.length - 1; i >= 0; i--) restoreSelection(targets[i], 'previousSelectedAnswer');
+        markDirty();
     }
 
     // ─── Bubble-fill: ฝน .choice-badge → เลือกคำตอบ (§6 Q1–Q4) ─
@@ -428,11 +504,14 @@
 
     // ─── Draw-and-hold shape snap (Q6–Q8, Q12) ───────────────
     // ไม่ snap บนปุ่มตัวเลือกหรือเส้นที่แตะเข้าเขต badge — กันชนกับการฝนเลือกคำตอบ (Phase 1b)
+    function touchedBadge() {
+        var badges = activeMeta.badges;
+        for (var i = 0; i < badges.length; i++) if (badges[i].len > 0) return true;
+        return false;
+    }
     function canSnap() {
         if (!active || active._snapped || active.anchor.indexOf('choice:') === 0) return false;
-        var badges = activeMeta.badges;
-        for (var i = 0; i < badges.length; i++) if (badges[i].len > 0) return false;
-        return true;
+        return !touchedBadge();
     }
     function trackHold(px, py) {
         var m = activeMeta;
@@ -553,14 +632,21 @@
                     var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
                     accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
                     active.points.push(makePoint(px, py, e));
+                    activeMeta.raw.push([px, py]);
                 }
-                var caused = commitShade();
-                if (caused) active.causedSelection = caused;
-                delete active._snapped;
-                var st = state();
-                st.strokes.push(active);
-                st.redoStack = [];
-                markDirty();
+                // Q9: ขีดฆ่าทับเส้นเดิม → ลบเส้นนั้น ทิ้ง zigzag ไม่บันทึก (ไม่ทำเมื่อ snap แล้ว หรือเส้นแตะเขต badge)
+                var targets = active.tool === 'pen' && !active._snapped && !touchedBadge() ? scribbleTargets(activeMeta.raw) : [];
+                if (targets.length) {
+                    scribbleErase(targets);
+                } else {
+                    var caused = commitShade();
+                    if (caused) active.causedSelection = caused;
+                    delete active._snapped;
+                    var st = state();
+                    st.strokes.push(active);
+                    st.redoStack = [];
+                    markDirty();
+                }
             }
             active = null;
         }
