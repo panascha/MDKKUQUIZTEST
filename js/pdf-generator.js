@@ -196,7 +196,12 @@ window.saveResultsToPdf = async function () {
         // ลายเส้นของข้อนี้ (ถ้ามี) — วาดทับบล็อกโจทย์/รูป/ตัวเลือกที่ตรงกับ anchor บนจอ ; anchor 'card' ไม่มีบล็อกให้ทับ ข้ามไป
         const scratch = scratchCache.get(q.questionId);
         const drawInk = (anchor, x, top, w) => {
-            if (scratch && typeof window.drawScratchStrokesToPdf === 'function') {
+            if (!scratch) return;
+            // เทปวาดก่อน (ทับข้อความ) แล้วค่อยหมึก — ลำดับเดียวกับบนจอ
+            if (typeof window.drawScratchTapesToPdf === 'function') {
+                window.drawScratchTapesToPdf(doc, scratch.tapes, anchor, x, top, w);
+            }
+            if (typeof window.drawScratchStrokesToPdf === 'function') {
                 window.drawScratchStrokesToPdf(doc, scratch.strokes, anchor, x, top, w);
             }
         };

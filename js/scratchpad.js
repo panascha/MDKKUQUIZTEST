@@ -8,7 +8,9 @@
 //   style: 'ball'|'fountain'|'brush' (Phase 2, pen เท่านั้น) — stroke เก่าไม่มี field นี้ → ถือเป็น 'ball' ตอนวาด ไม่ migrate DB
 //   p: แรงกดจาก Apple Pencil (0–1) มีเฉพาะ pointerType 'pen' — ไม่มี p (นิ้ว/เมาส์/stroke เก่า) → perfect-freehand จำลองแรงกดจากความเร็ว
 //   causedSelection: { qid, previousSelectedAnswer, newSelectedAnswer } เฉพาะ stroke ที่ฝน badge จนเปลี่ยนคำตอบ (undo คืนค่าเดิม)
-// IndexedDB key: scratch_<subjectParam>_<qid> → { qid, subjectParam, strokes, redoStack, updatedAt }
+// tape: { anchor, nx, ny, nw, nh, revealed } — เทปปิดคำตอบ (Phase 2 §8 Q10/Q16) เก็บแยกใน tapes[] ไม่ใช่ stroke
+//   nx/ny/nw/nh normalize ด้วย "ความกว้าง" anchor ทั้งหมด เหมือนจุดของ stroke ; แตะเพื่อเปิด/ปิด (revealed) ; undo/redo ไม่ยุ่ง แต่ยางลบ/ขีดฆ่า/ล้างทั้งข้อ ลบได้
+// IndexedDB key: scratch_<subjectParam>_<qid> → { qid, subjectParam, strokes, redoStack, tapes, updatedAt }
 // localStorage: scratchpad_prefs → { penStyle, pen:{colors,widths,ci,wi}, hl:{...}, eraseHlOnly } (Phase 2 §8 Q15/Q17 — ไม่จำ tool)
 
 (function () {
@@ -49,6 +51,14 @@
     var SCRIBBLE_MIN_SWING = 0.3;    // แต่ละช่วงไป-กลับต้องยาว ≥ 30% ของกรอบในแกนนั้น ไม่งั้นนับเป็นมือสั่น
     var SCRIBBLE_DENSITY = 2.5;      // ความยาวเส้นรวม ≥ 2.5 × เส้นทแยงกรอบ — ตัว w / ห่วงเดียวไม่ผ่าน
     var SCRIBBLE_MIN_HITS = 3;       // จุดตัวอย่างของ zigzag ที่โดนเส้นเป้า ≥ เท่านี้ (หรือเส้นเป้าอยู่ในกรอบ zigzag ทั้งเส้น)
+    // Phase 2 §8 Q10/Q10b/Q16: เทปปิดคำตอบ — ลากกรอบทับข้อความ ปิดไว้ก่อน แตะแล้วเปิดดู
+    var TAPE_MIN_PX = 10;            // ลากสั้นกว่านี้ทั้งสองด้าน = แตะ ไม่ใช่วาดเทปใหม่
+    var TAPE_REVEALED_ALPHA = 0.12;  // เปิดแล้วเหลือกรอบจางๆ ให้รู้ว่าตรงนี้มีเทป
+    var TAPE_RADIUS = 3;             // มุมมนของแถบเทป (px)
+    var TAPE_COLORS = {              // ทึบแสงจริง (ไม่มี alpha) — ต้องบังตัวหนังสือใต้ canvas ได้สนิท
+        light: { fill: '#dfe3ea', edge: '#94a3b8' },
+        dark:  { fill: '#3a4250', edge: '#64748b' }
+    };
     var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
@@ -58,6 +68,7 @@
     var swallowPresetClick = false;  // click ที่ตามหลังกดค้าง (touch) ห้ามไปปิด popover ที่เพิ่งเปิด
     var dpr = 1;
     var active = null;               // stroke ที่กำลังลาก
+    var activeTape = null;           // เทปที่กำลังลากกรอบ (แยกจาก active — snap/ขีดฆ่า/ฝน badge ไม่ยุ่งกับเทป)
     var activeMeta = null;           // { pointerId, wrapLeft, wrapTop, ax, ay, aw, lastX, lastY, badges }
     var rafPending = false;
     var saveTimer = null;
@@ -140,8 +151,40 @@
         return true;
     }
 
+    function isDark() {
+        return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
     function blendMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark' ? 'screen' : 'multiply';
+        return isDark() ? 'screen' : 'multiply';
+    }
+
+    // เทปในพิกัดจริงของ wrapper (px) — normalize ด้วยความกว้าง anchor ทั้ง 4 ค่า เหมือนจุดของ stroke
+    function tapeBox(t, rect) {
+        return { x: rect.x + t.nx * rect.w, y: rect.y + t.ny * rect.w, w: t.nw * rect.w, h: t.nh * rect.w };
+    }
+    function tapeRoundRect(c, b) {
+        var r = Math.min(TAPE_RADIUS, Math.abs(b.w) / 2, Math.abs(b.h) / 2);
+        c.beginPath();
+        if (c.roundRect) c.roundRect(b.x, b.y, b.w, b.h, r);
+        else c.rect(b.x, b.y, b.w, b.h);
+    }
+    // Q10b: ยังไม่เปิด = ทึบสนิท (บังตัวหนังสือ) ; เปิดแล้ว = จางๆ + กรอบประ อ่านข้อความข้างใต้ได้
+    function drawTape(t, rect, isActive) {
+        var b = tapeBox(t, rect);
+        if (Math.abs(b.w) < 1 || Math.abs(b.h) < 1) return;
+        var col = isDark() ? TAPE_COLORS.dark : TAPE_COLORS.light;
+        var open = !!t.revealed;
+        ctx.save();
+        tapeRoundRect(ctx, b);
+        ctx.globalAlpha = open ? TAPE_REVEALED_ALPHA : (isActive ? 0.75 : 1);
+        ctx.fillStyle = col.fill;
+        ctx.fill();
+        ctx.globalAlpha = open || isActive ? 0.6 : 1;
+        ctx.strokeStyle = col.edge;
+        ctx.lineWidth = 1;
+        if (open) ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.restore();
     }
 
     function strokePath(c, stroke, rect) {
@@ -214,6 +257,13 @@
         var st = state();
         if (!st) return;
         var rects = {};
+        // เทปวาดก่อนหมึกเสมอ → เทปบังแค่เนื้อหาการ์ด (ใต้ canvas) ลายมือที่เขียนไว้ยังเห็นทับเทป
+        st.tapes.forEach(function (t) {
+            if (!(t.anchor in rects)) rects[t.anchor] = anchorRect(t.anchor);
+            var rect = rects[t.anchor];
+            if (rect) drawTape(t, rect);
+        });
+        if (activeTape && activeMeta) drawTape(activeTape, { x: activeMeta.ax, y: activeMeta.ay, w: activeMeta.aw }, true);
         st.strokes.forEach(function (stroke) {
             if (!(stroke.anchor in rects)) rects[stroke.anchor] = anchorRect(stroke.anchor);
             var rect = rects[stroke.anchor];
@@ -243,10 +293,10 @@
     function persist(st) {
         if (!st || !st.qid) return Promise.resolve();
         var key = scratchKey(st.subjectParam, st.qid);
-        if (!st.strokes.length && !st.redoStack.length) return deleteCacheDB(key).catch(function () { });
+        if (!st.strokes.length && !st.redoStack.length && !st.tapes.length) return deleteCacheDB(key).catch(function () { });
         return window.setCacheDB(key, {
             qid: st.qid, subjectParam: st.subjectParam,
-            strokes: st.strokes, redoStack: st.redoStack, updatedAt: Date.now()
+            strokes: st.strokes, redoStack: st.redoStack, tapes: st.tapes, updatedAt: Date.now()
         }).catch(function (e) { console.warn('[Scratchpad] save failed', e); });
     }
 
@@ -265,7 +315,7 @@
     function loadForQuestion(qid) {
         var sp = subjectParam();
         var seq = ++loadSeq;
-        window.APP._scratchpadState = { qid: qid, subjectParam: sp, strokes: [], redoStack: [] };
+        window.APP._scratchpadState = { qid: qid, subjectParam: sp, strokes: [], redoStack: [], tapes: [] };
         renderAll();
         updateToolbarState();
         window.getCacheDB(scratchKey(sp, qid)).then(function (rec) {
@@ -273,6 +323,7 @@
             var st = state();
             // ผู้ใช้อาจวาดไปแล้วระหว่างรอโหลด — เอาของเก่าไว้ก่อน ต่อด้วยของใหม่
             st.strokes = (rec.strokes || []).concat(st.strokes);
+            st.tapes = (rec.tapes || []).concat(st.tapes);
             if (!st.redoStack.length) st.redoStack = rec.redoStack || [];
             renderAll();
             updateToolbarState();
@@ -306,18 +357,52 @@
     function canEraseStroke(stroke) {
         return !prefs.eraseHlOnly || stroke.tool === 'highlighter';
     }
+    // เทปไม่ใช่ไฮไลต์ → โหมด "ลบเฉพาะไฮไลต์" กันเทปไว้ด้วย
+    function canEraseTape() { return !prefs.eraseHlOnly; }
+    function tapeHit(t, rect, px, py) {
+        var b = tapeBox(t, rect);
+        var x1 = Math.min(b.x, b.x + b.w), x2 = Math.max(b.x, b.x + b.w);
+        var y1 = Math.min(b.y, b.y + b.h), y2 = Math.max(b.y, b.y + b.h);
+        return px >= x1 && px <= x2 && py >= y1 && py <= y2;
+    }
+    // เทปที่โดนแตะ — ไล่จากอันหลังสุดก่อน (วาดทีหลัง = อยู่บน)
+    function tapeAt(px, py) {
+        var st = state();
+        if (!st) return null;
+        for (var i = st.tapes.length - 1; i >= 0; i--) {
+            var rect = anchorRect(st.tapes[i].anchor);
+            if (rect && tapeHit(st.tapes[i], rect, px, py)) return st.tapes[i];
+        }
+        return null;
+    }
+    // Q10: แตะเทป = เปิด/ปิด — true เมื่อโดนเทป (ผู้เรียกต้องกันไม่ให้ event ไหลไปโดนปุ่มตัวเลือก)
+    function toggleTapeAt(clientX, clientY) {
+        if (!wrapper || !state()) return false;
+        var w = wrapper.getBoundingClientRect();
+        var t = tapeAt(clientX - w.left, clientY - w.top);
+        if (!t) return false;
+        t.revealed = !t.revealed;
+        renderAll();
+        markDirty();
+        return true;
+    }
     function eraseAt(px, py) {
         var st = state();
         if (!st) return;
         var rects = {};
-        var before = st.strokes.length;
+        var before = st.strokes.length + st.tapes.length;
         st.strokes = st.strokes.filter(function (stroke) {
             if (!canEraseStroke(stroke)) return true;
             if (!(stroke.anchor in rects)) rects[stroke.anchor] = anchorRect(stroke.anchor);
             var rect = rects[stroke.anchor];
             return !rect || !strokeHit(stroke, rect, px, py);
         });
-        if (st.strokes.length !== before) { renderAll(); markDirty(); }
+        if (canEraseTape()) st.tapes = st.tapes.filter(function (t) {
+            if (!(t.anchor in rects)) rects[t.anchor] = anchorRect(t.anchor);
+            var rect = rects[t.anchor];
+            return !rect || !tapeHit(t, rect, px, py);
+        });
+        if (st.strokes.length + st.tapes.length !== before) { renderAll(); markDirty(); }
     }
 
     // ─── Scribble-to-erase (Q9) — ลำดับ: แตะเขต badge ไม่นับ → snap ค้าง (ระหว่างลาก) → ขีดฆ่า (ตอนยก) → หมึกธรรมดา ─
@@ -351,15 +436,19 @@
         }
         return Math.max(reversals(0, bw), reversals(1, bh)) >= SCRIBBLE_MIN_REVERSALS;
     }
+    function rawBBox(raw) {
+        var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+        for (var i = 0; i < raw.length; i++) {
+            if (raw[i][0] < b.minX) b.minX = raw[i][0]; if (raw[i][0] > b.maxX) b.maxX = raw[i][0];
+            if (raw[i][1] < b.minY) b.minY = raw[i][1]; if (raw[i][1] > b.maxY) b.maxY = raw[i][1];
+        }
+        return b;
+    }
     // คืน array เส้นที่ควรลบ (ว่าง = ไม่ใช่ขีดฆ่า / ไม่มีเส้นให้ลบ → วาดเป็นหมึกตามปกติ)
     function scribbleTargets(raw) {
         var st = state();
         if (!st || !st.strokes.length || !isScribble(raw)) return [];
-        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, i;
-        for (i = 0; i < raw.length; i++) {
-            if (raw[i][0] < minX) minX = raw[i][0]; if (raw[i][0] > maxX) maxX = raw[i][0];
-            if (raw[i][1] < minY) minY = raw[i][1]; if (raw[i][1] > maxY) maxY = raw[i][1];
-        }
+        var bb = rawBBox(raw), minX = bb.minX, maxX = bb.maxX, minY = bb.minY, maxY = bb.maxY, i;
         var rects = {}, out = [];
         st.strokes.forEach(function (stroke) {
             if (!canEraseStroke(stroke)) return;
@@ -378,9 +467,30 @@
         });
         return out;
     }
-    function scribbleErase(targets) {
+    // เทปโดนขีดฆ่าเมื่อ zigzag อยู่ในกรอบเทป หรือมีจุดตัวอย่างตกในเทป ≥ SCRIBBLE_MIN_HITS
+    function scribbleTapeTargets(raw) {
+        var st = state();
+        if (!st || !st.tapes.length || !canEraseTape() || !isScribble(raw)) return [];
+        var bb = rawBBox(raw), rects = {}, out = [];
+        st.tapes.forEach(function (t) {
+            if (!(t.anchor in rects)) rects[t.anchor] = anchorRect(t.anchor);
+            var rect = rects[t.anchor];
+            if (!rect) return;
+            var b = tapeBox(t, rect);
+            var inside = bb.minX >= Math.min(b.x, b.x + b.w) && bb.maxX <= Math.max(b.x, b.x + b.w) &&
+                bb.minY >= Math.min(b.y, b.y + b.h) && bb.maxY <= Math.max(b.y, b.y + b.h);
+            var hits = 0;
+            if (!inside) for (var k = 0; k < raw.length && hits < SCRIBBLE_MIN_HITS; k++) {
+                if (tapeHit(t, rect, raw[k][0], raw[k][1])) hits++;
+            }
+            if (inside || hits >= SCRIBBLE_MIN_HITS) out.push(t);
+        });
+        return out;
+    }
+    function scribbleErase(targets, tapeTargets) {
         var st = state();
         st.strokes = st.strokes.filter(function (s) { return targets.indexOf(s) === -1; });
+        if (tapeTargets.length) st.tapes = st.tapes.filter(function (t) { return tapeTargets.indexOf(t) === -1; });
         for (var i = targets.length - 1; i >= 0; i--) restoreSelection(targets[i], 'previousSelectedAnswer');
         markDirty();
     }
@@ -480,6 +590,19 @@
         var anchor = anchorFromTarget(e.target);
         var rect = anchorRect(anchor);
         if (!rect) { anchor = 'card'; rect = anchorRect('card'); }
+
+        // Q10: เทป — ลากเป็นกรอบ (ลากสั้น = แตะเปิด/ปิดเทปเดิม ตัดสินตอนยกปากกา)
+        if (tool === 'tape') {
+            activeTape = { anchor: anchor, nx: (px - rect.x) / rect.w, ny: (py - rect.y) / rect.w, nw: 0, nh: 0, revealed: false };
+            activeMeta = {
+                pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top,
+                ax: rect.x, ay: rect.y, aw: rect.w, startX: px, startY: py, taping: true
+            };
+            beginCapture(e);
+            requestRender();
+            return;
+        }
+
         var pg = presetGroup();
         active = {
             tool: tool,
@@ -596,6 +719,15 @@
         return pt;
     }
 
+    // กรอบเทประหว่างลาก — เก็บมุมซ้ายบน + กว้าง/สูงเป็นบวกเสมอ (ลากย้อนขึ้นซ้ายก็ได้)
+    function sizeTape(px, py) {
+        var m = activeMeta;
+        activeTape.nx = (Math.min(m.startX, px) - m.ax) / m.aw;
+        activeTape.ny = (Math.min(m.startY, py) - m.ay) / m.aw;
+        activeTape.nw = Math.abs(px - m.startX) / m.aw;
+        activeTape.nh = Math.abs(py - m.startY) / m.aw;
+    }
+
     function beginCapture(e) {
         e.preventDefault();
         canvas.style.pointerEvents = 'auto';
@@ -607,6 +739,7 @@
         if (!activeMeta || e.pointerId !== activeMeta.pointerId) return;
         var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
         if (activeMeta.erasing) { eraseAt(px, py); return; }
+        if (activeMeta.taping) { sizeTape(px, py); requestRender(); return; }
         if (active._snapped) return;   // Q7: snap แล้วล็อกจนยกปากกา
         var dx = px - activeMeta.lastX, dy = py - activeMeta.lastY;
         if (dx * dx + dy * dy < DECIMATE_SQ) return;
@@ -625,6 +758,19 @@
         suppressClickUntil = Date.now() + 400;
         clearHold();
 
+        // เทป: ลากได้ขนาด = เทปใหม่ ; ลากไม่ถึงเกณฑ์ = แตะ → เปิด/ปิดเทปที่อยู่ตรงนั้น
+        if (activeTape && e.type !== 'pointercancel') {
+            var tx = e.clientX - activeMeta.wrapLeft, ty = e.clientY - activeMeta.wrapTop;
+            sizeTape(tx, ty);
+            if (activeTape.nw * activeMeta.aw >= TAPE_MIN_PX && activeTape.nh * activeMeta.aw >= TAPE_MIN_PX) {
+                state().tapes.push(activeTape);
+                markDirty();
+            } else {
+                var hit = tapeAt(tx, ty);
+                if (hit) { hit.revealed = !hit.revealed; markDirty(); }
+            }
+        }
+
         if (active) {
             if (e.type !== 'pointercancel') {
                 // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation (ยกเว้น stroke ที่ snap แล้ว)
@@ -635,9 +781,11 @@
                     activeMeta.raw.push([px, py]);
                 }
                 // Q9: ขีดฆ่าทับเส้นเดิม → ลบเส้นนั้น ทิ้ง zigzag ไม่บันทึก (ไม่ทำเมื่อ snap แล้ว หรือเส้นแตะเขต badge)
-                var targets = active.tool === 'pen' && !active._snapped && !touchedBadge() ? scribbleTargets(activeMeta.raw) : [];
-                if (targets.length) {
-                    scribbleErase(targets);
+                var canScribble = active.tool === 'pen' && !active._snapped && !touchedBadge();
+                var targets = canScribble ? scribbleTargets(activeMeta.raw) : [];
+                var tapeTargets = canScribble ? scribbleTapeTargets(activeMeta.raw) : [];
+                if (targets.length || tapeTargets.length) {
+                    scribbleErase(targets, tapeTargets);
                 } else {
                     var caused = commitShade();
                     if (caused) active.causedSelection = caused;
@@ -651,6 +799,7 @@
             active = null;
         }
         clearShadingClass();
+        activeTape = null;
         activeMeta = null;
         renderAll();
     }
@@ -692,15 +841,15 @@
     }
     function clearAll() {
         var st = state();
-        if (!st || (!st.strokes.length && !st.redoStack.length)) return;
+        if (!st || (!st.strokes.length && !st.redoStack.length && !st.tapes.length)) return;
         Swal.fire({
             title: 'ล้างลายเส้นของข้อนี้?',
-            text: 'ลบเฉพาะที่เขียนไว้ในข้อนี้ ข้ออื่นไม่กระทบ',
+            text: 'ลบลายเส้นและเทปที่ทำไว้ในข้อนี้ ข้ออื่นไม่กระทบ',
             icon: 'warning', showCancelButton: true,
             confirmButtonText: 'ล้าง', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#d33'
         }).then(function (r) {
             if (!r.isConfirmed) return;
-            st.strokes = []; st.redoStack = [];
+            st.strokes = []; st.redoStack = []; st.tapes = [];
             renderAll(); markDirty();
         });
     }
@@ -813,7 +962,7 @@
         var c = toolbar.querySelector('[data-sp-act="clear"]');
         if (u) u.disabled = !st || !st.strokes.length;
         if (r) r.disabled = !st || !st.redoStack.length;
-        if (c) c.disabled = !st || (!st.strokes.length && !st.redoStack.length);
+        if (c) c.disabled = !st || (!st.strokes.length && !st.redoStack.length && !st.tapes.length);
     }
     function setFingerMode(on) {
         window.APP._fingerDrawMode = on;
@@ -914,6 +1063,29 @@
             doc.restoreGraphicsState();
         });
     };
+    // Q10b: เทปใน PDF — ยังไม่เปิด = ทึบทับข้อความ (ปิดคำตอบไว้อ่านทวน) ; เปิดแล้ว = กรอบประจางๆ ยังอ่านได้
+    window.drawScratchTapesToPdf = function (doc, tapes, anchor, x, y, w) {
+        if (!tapes || !tapes.length) return;
+        tapes.forEach(function (t) {
+            if (t.anchor !== anchor) return;
+            var bx = x + t.nx * w, by = y + t.ny * w, bw = t.nw * w, bh = t.nh * w;
+            if (bw <= 0 || bh <= 0) return;
+            var col = hexToRgb(TAPE_COLORS.light.fill), edge = hexToRgb(TAPE_COLORS.light.edge);
+            doc.saveGraphicsState();
+            doc.setDrawColor(edge[0], edge[1], edge[2]);
+            doc.setFillColor(col[0], col[1], col[2]);
+            doc.setLineWidth(0.2);
+            if (t.revealed) {
+                if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern([1, 0.8], 0);
+                doc.rect(bx, by, bw, bh, 'S');
+                // jsPDF 2.5: restoreGraphicsState ไม่ล้าง dash pattern — ต้องรีเซ็ตเอง ไม่งั้นเส้นถัดไปทั้งไฟล์กลายเป็นเส้นประ
+                if (typeof doc.setLineDashPattern === 'function') doc.setLineDashPattern([], 0);
+            } else {
+                doc.rect(bx, by, bw, bh, 'FD');
+            }
+            doc.restoreGraphicsState();
+        });
+    };
     function hexToRgb(hex) {
         var n = parseInt(hex.replace('#', ''), 16);
         return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -936,8 +1108,10 @@
         wrapper.addEventListener('touchstart', onTouchGuard, { passive: false });
         wrapper.addEventListener('touchmove', onTouchGuard, { passive: false });
         // click ที่หลุดมาหลังยกปากกา (เช่น ตอน capture ล้มเหลวบน WebKit) ห้ามไปกดตัวเลือก
+        // Q10: แตะโดนเทป = เปิด/ปิดเทป ไม่ให้ทะลุไปเลือกคำตอบ ; ไม่โดนเทปก็ปล่อยผ่านตามปกติ (ฟังตลอด ไม่ขึ้นกับเครื่องมือ)
         wrapper.addEventListener('click', function (e) {
-            if (Date.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); }
+            if (Date.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); return; }
+            if (toggleTapeAt(e.clientX, e.clientY)) { e.stopPropagation(); e.preventDefault(); }
         }, true);
 
         new ResizeObserver(scheduleRender).observe(wrapper);
