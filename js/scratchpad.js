@@ -8,13 +8,20 @@
 //   p: แรงกดจาก Apple Pencil (0–1) มีเฉพาะ pointerType 'pen' — ไม่มี p (นิ้ว/เมาส์/stroke เก่า) → perfect-freehand จำลองแรงกดจากความเร็ว
 //   causedSelection: { qid, previousSelectedAnswer, newSelectedAnswer } เฉพาะ stroke ที่ฝน badge จนเปลี่ยนคำตอบ (undo คืนค่าเดิม)
 // IndexedDB key: scratch_<subjectParam>_<qid> → { qid, subjectParam, strokes, redoStack, updatedAt }
+// localStorage: scratchpad_prefs → { penStyle, pen:{colors,widths,ci,wi}, hl:{...}, eraseHlOnly } (Phase 2 §8 Q15/Q17 — ไม่จำ tool)
 
 (function () {
-    var PEN_COLOR = '#2563eb';
-    var PEN_WIDTH = 2.5;
-    var HL_COLOR = '#facc15';
-    var HL_WIDTH = 18;
     var HL_ALPHA = 0.45;
+    var PREFS_KEY = 'scratchpad_prefs';
+    // Q15: preset สี/ความหนา 3 ช่อง — ปากกากับไฮไลต์แยกชุด ; ci/wi = ช่องที่เลือก ; กดค้างที่จุด/pill แก้ค่าในช่องได้ (popover)
+    var DEFAULT_PREFS = {
+        penStyle: 'ball',
+        pen: { colors: ['#2563eb', '#1e1e1e', '#dc2626'], widths: [1.5, 2.5, 5], ci: 0, wi: 1 },
+        hl:  { colors: ['#facc15', '#4ade80', '#f472b6'], widths: [12, 18, 28],  ci: 0, wi: 1 },
+        eraseHlOnly: false           // step 4 (Q11) ต่อเข้า canEraseStroke — ตอนนี้แค่จำค่า
+    };
+    var WIDTH_RANGE = { pen: [0.5, 12], hl: [6, 40] };   // ช่วง slider ใน popover
+    var LONG_PRESS_MS = 500;
     var ERASER_RADIUS = 12;          // px
     var DECIMATE_SQ = 4;             // R6: ข้ามจุดที่ห่างจากจุดก่อน < 2px
     var PALM_BLOB_PX = 40;           // นิ้ว/ฝ่ามือกว้างเกินนี้ = ฝ่ามือ ไม่วาด
@@ -33,7 +40,9 @@
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
     var tool = 'pen';
-    var penStyle = 'ball';
+    var prefs = loadPrefs();
+    var popTarget = null;            // popover เปิดอยู่ที่ { kind:'color'|'width', idx }
+    var swallowPresetClick = false;  // click ที่ตามหลังกดค้าง (touch) ห้ามไปปิด popover ที่เพิ่งเปิด
     var dpr = 1;
     var active = null;               // stroke ที่กำลังลาก
     var activeMeta = null;           // { pointerId, wrapLeft, wrapTop, ax, ay, aw, lastX, lastY, badges }
@@ -48,6 +57,33 @@
     function scratchKey(sp, qid) { return 'scratch_' + sp + '_' + qid; }
 
     function state() { return window.APP._scratchpadState; }
+
+    // ─── Prefs (Q17) ─────────────────────────────────────────
+    // อ่านทับ default ทีละ field — JSON เก่า/พังไม่ทำให้ toolbar ตาย
+    function loadPrefs() {
+        var p = JSON.parse(JSON.stringify(DEFAULT_PREFS));
+        try {
+            var s = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
+            if (!s || typeof s !== 'object') return p;
+            if (PEN_STYLES[s.penStyle]) p.penStyle = s.penStyle;
+            if (typeof s.eraseHlOnly === 'boolean') p.eraseHlOnly = s.eraseHlOnly;
+            ['pen', 'hl'].forEach(function (k) {
+                var d = p[k], o = s[k];
+                if (!o || typeof o !== 'object') return;
+                for (var i = 0; i < 3; i++) {
+                    if (o.colors && /^#[0-9a-f]{6}$/i.test(o.colors[i])) d.colors[i] = o.colors[i];
+                    if (o.widths && isFinite(o.widths[i]) && o.widths[i] > 0) d.widths[i] = Number(o.widths[i]);
+                }
+                if (o.ci >= 0 && o.ci <= 2) d.ci = o.ci | 0;
+                if (o.wi >= 0 && o.wi <= 2) d.wi = o.wi | 0;
+            });
+        } catch (e) { }
+        return p;
+    }
+    function savePrefs() {
+        try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { }
+    }
+    function presetGroup() { return tool === 'highlighter' ? prefs.hl : prefs.pen; }
 
     // ─── Anchor ───────────────────────────────────────────────
     function anchorFromTarget(target) {
@@ -361,15 +397,16 @@
         var anchor = anchorFromTarget(e.target);
         var rect = anchorRect(anchor);
         if (!rect) { anchor = 'card'; rect = anchorRect('card'); }
+        var pg = presetGroup();
         active = {
             tool: tool,
-            color: tool === 'highlighter' ? HL_COLOR : PEN_COLOR,
-            width: tool === 'highlighter' ? HL_WIDTH : PEN_WIDTH,
+            color: pg.colors[pg.ci],
+            width: pg.widths[pg.wi],
             aw: rect.w,
             anchor: anchor,
             points: []
         };
-        if (tool === 'pen') active.style = penStyle;
+        if (tool === 'pen') active.style = prefs.penStyle;
         activeMeta = {
             pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, ax: rect.x, ay: rect.y, aw: rect.w, lastX: px, lastY: py,
             badges: canShadeSelect() ? collectBadges(w.left, w.top) : [],
@@ -484,18 +521,106 @@
     }
 
     // ─── Toolbar ─────────────────────────────────────────────
-    function setTool(t) {
+    // Q13: ปุ่ม Ball/Fountain/Brush = tool 'pen' + data-sp-style — คลิกเดียวตั้งทั้งคู่ ; แบบปากกาจำใน prefs
+    function setTool(t, style) {
         tool = t;
+        if (t === 'pen' && PEN_STYLES[style]) { prefs.penStyle = style; savePrefs(); }
         toolbar.querySelectorAll('.sp-tool').forEach(function (b) {
-            b.classList.toggle('active', b.dataset.spTool === t);
+            var on = b.dataset.spTool === t && (t !== 'pen' || b.dataset.spStyle === prefs.penStyle);
+            b.classList.toggle('active', on);
+        });
+        hidePopover();
+        renderCtxRow();
+    }
+    // แถว 2 ตามเครื่องมือ: ปากกา/ไฮไลต์ = จุดสี + pill ความหนา ; ยางลบ = checkbox ; อื่นๆ ซ่อนทั้งแถว
+    function renderCtxRow() {
+        var hasPresets = tool === 'pen' || tool === 'highlighter';
+        toolbar.querySelector('.sp-row-ctx').hidden = !hasPresets && tool !== 'eraser';
+        toolbar.querySelector('.sp-presets').hidden = !hasPresets;
+        toolbar.querySelector('.sp-eraser-opt').hidden = tool !== 'eraser';
+        if (hasPresets) {
+            var pg = presetGroup();
+            var scale = tool === 'highlighter' ? 1 / 3 : 1;   // เส้น preview ใน pill (ไฮไลต์หนามาก ย่อให้พอดี)
+            toolbar.querySelectorAll('.sp-dot').forEach(function (d, i) {
+                d.style.background = pg.colors[i];
+                d.classList.toggle('active', i === pg.ci);
+            });
+            toolbar.querySelectorAll('.sp-pill').forEach(function (p, i) {
+                var line = p.querySelector('.sp-pill-line');
+                if (line) line.style.height = Math.max(1.5, Math.min(10, pg.widths[i] * scale)) + 'px';
+                p.classList.toggle('active', i === pg.wi);
+            });
+        }
+        var cb = document.getElementById('sp-erase-hl-only');
+        if (cb) cb.checked = !!prefs.eraseHlOnly;
+    }
+    // Popover แก้ค่าในช่อง (กดค้าง/คลิกขวาที่จุดหรือ pill) — input native: color picker / range
+    function showPopover(kind, idx) {
+        var pop = toolbar.querySelector('.sp-popover');
+        var pg = presetGroup();
+        popTarget = { kind: kind, idx: idx };
+        pop.querySelector('.sp-pop-color-wrap').hidden = kind !== 'color';
+        pop.querySelector('.sp-pop-width-wrap').hidden = kind !== 'width';
+        if (kind === 'color') {
+            document.getElementById('sp-pop-color').value = pg.colors[idx];
+        } else {
+            var r = document.getElementById('sp-pop-width');
+            var rng = WIDTH_RANGE[tool === 'highlighter' ? 'hl' : 'pen'];
+            r.min = rng[0]; r.max = rng[1]; r.value = pg.widths[idx];
+            document.getElementById('sp-pop-width-val').textContent = pg.widths[idx] + 'px';
+        }
+        pop.hidden = false;
+    }
+    function hidePopover() {
+        var pop = toolbar.querySelector('.sp-popover');
+        if (pop) pop.hidden = true;
+        popTarget = null;
+    }
+    function onPopoverInput(e) {
+        if (!popTarget) return;
+        var pg = presetGroup();
+        if (popTarget.kind === 'color') {
+            pg.colors[popTarget.idx] = e.target.value;
+            pg.ci = popTarget.idx;
+        } else {
+            var v = parseFloat(e.target.value);
+            if (!(v > 0)) return;
+            pg.widths[popTarget.idx] = v;
+            pg.wi = popTarget.idx;
+            document.getElementById('sp-pop-width-val').textContent = v + 'px';
+        }
+        savePrefs();
+        renderCtxRow();
+    }
+    function presetTarget(el) {
+        var b = el.closest('.sp-dot, .sp-pill');
+        if (!b) return null;
+        return b.classList.contains('sp-dot') ? { kind: 'color', idx: +b.dataset.spCi } : { kind: 'width', idx: +b.dataset.spWi };
+    }
+    // กดค้าง 500ms ที่จุด/pill → popover ; ขยับเกิน 8px (เลื่อนแถวบนมือถือ) หรือปล่อยก่อน = ยกเลิก
+    function initLongPress() {
+        var timer = null, sx = 0, sy = 0;
+        function cancel() { if (timer) clearTimeout(timer); timer = null; }
+        toolbar.addEventListener('pointerdown', function (e) {
+            var t = presetTarget(e.target);
+            if (!t) return;
+            cancel();
+            sx = e.clientX; sy = e.clientY;
+            timer = setTimeout(function () { timer = null; swallowPresetClick = true; showPopover(t.kind, t.idx); }, LONG_PRESS_MS);
+        });
+        toolbar.addEventListener('pointermove', function (e) {
+            if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancel();
+        });
+        toolbar.addEventListener('pointerup', cancel);
+        toolbar.addEventListener('pointercancel', cancel);
+        toolbar.addEventListener('contextmenu', function (e) {
+            var t = presetTarget(e.target);
+            if (!t) return;
+            e.preventDefault();
+            cancel();
+            showPopover(t.kind, t.idx);
         });
     }
-    // ปุ่มเลือกแบบปากกามาใน step 2 (toolbar สองชั้น) — ตอนนี้สลับผ่าน console ได้เพื่อทดสอบ
-    window.setScratchpadPenStyle = function (s) {
-        if (!PEN_STYLES[s]) return false;
-        penStyle = s;
-        return true;
-    };
     function updateToolbarState() {
         var st = state();
         var u = toolbar.querySelector('[data-sp-act="undo"]');
@@ -515,9 +640,18 @@
     function initToolbar() {
         var toggle = document.getElementById('scratchpad-toolbar-toggle');
         toolbar.addEventListener('click', function (e) {
+            if (swallowPresetClick) { swallowPresetClick = false; return; }
+            if (!e.target.closest('.sp-popover')) hidePopover();
+            var pt = presetTarget(e.target);
+            if (pt) {
+                var pg = presetGroup();
+                if (pt.kind === 'color') pg.ci = pt.idx; else pg.wi = pt.idx;
+                savePrefs(); renderCtxRow();
+                return;
+            }
             var btn = e.target.closest('button');
             if (!btn) return;
-            if (btn.dataset.spTool) { setTool(btn.dataset.spTool); return; }
+            if (btn.dataset.spTool) { setTool(btn.dataset.spTool, btn.dataset.spStyle); return; }
             switch (btn.dataset.spAct) {
                 case 'undo': undo(); break;
                 case 'redo': redo(); break;
@@ -525,7 +659,13 @@
                 case 'finger': setFingerMode(!window.APP._fingerDrawMode); break;
             }
         });
-        setTool('pen');
+        toolbar.querySelector('.sp-popover').addEventListener('input', onPopoverInput);
+        document.getElementById('sp-erase-hl-only').addEventListener('change', function (e) {
+            prefs.eraseHlOnly = e.target.checked;
+            savePrefs();
+        });
+        initLongPress();
+        setTool('pen', prefs.penStyle);
         updateToolbarState();
 
         // R7: จอเล็กยุบเป็นปุ่มกลม จำสถานะไว้ใน localStorage ; จอใหญ่ CSS แสดงเต็มเสมอ (class ไม่มีผล)
@@ -534,12 +674,14 @@
         toolbar.classList.toggle('collapsed', collapsed);
         toggle.addEventListener('click', function () {
             var c = toolbar.classList.toggle('collapsed');
+            if (c) hidePopover();
             try { localStorage.setItem(TOOLBAR_COLLAPSED_KEY, String(c)); } catch (e) { }
         });
         document.addEventListener('click', function (e) {
+            if (toolbar.contains(e.target) || e.target === toggle || toggle.contains(e.target)) return;
+            hidePopover();
             if (window.innerWidth >= 768) return;
             if (toolbar.classList.contains('collapsed')) return;
-            if (toolbar.contains(e.target) || e.target === toggle || toggle.contains(e.target)) return;
             toolbar.classList.add('collapsed');
             try { localStorage.setItem(TOOLBAR_COLLAPSED_KEY, 'true'); } catch (err) { }
         });

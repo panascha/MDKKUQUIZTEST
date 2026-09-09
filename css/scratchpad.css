@@ -45,10 +45,10 @@
     -webkit-user-select: none;
 }
 
-/* Toolbar (desktop: แถวเต็ม อยู่เหนือการ์ด) */
+/* Toolbar (desktop: สองแถว อยู่เหนือการ์ด) */
 #scratchpad-toolbar {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 4px;
     padding: 6px 8px;
     margin: 0 20px 6px;
@@ -56,6 +56,28 @@
     border: 1px solid var(--color-border-soft);
     border-radius: 8px;
     width: fit-content;
+    position: relative;
+}
+.sp-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+.sp-row-ctx {
+    padding-top: 4px;
+    border-top: 1px solid var(--color-border-soft);
+}
+.sp-row-ctx[hidden] {
+    display: none !important;
+}
+.sp-presets {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.sp-presets[hidden] {
+    display: none !important;
 }
 #scratchpad-toolbar .sp-tool,
 #scratchpad-toolbar .sp-act {
@@ -81,7 +103,8 @@
     color: var(--color-primary);
     border-color: var(--color-primary);
 }
-#scratchpad-toolbar .sp-act:disabled {
+#scratchpad-toolbar .sp-act:disabled,
+#scratchpad-toolbar .sp-tool:disabled {
     opacity: 0.35;
     cursor: default;
 }
@@ -91,36 +114,172 @@
     background: var(--color-border);
     margin: 0 3px;
 }
+/* กดค้างที่จุด/pill = popover — กัน iOS เด้ง callout/เลือกข้อความ (touch-action ยังปล่อยให้เลื่อนแถวได้) */
+.sp-dot,
+.sp-pill {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+}
+.sp-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--color-surface);
+    box-shadow: 0 0 0 1px var(--color-border);
+    padding: 0;
+    cursor: pointer;
+}
+.sp-dot.active {
+    box-shadow: 0 0 0 2px var(--color-primary);
+}
+.sp-pill {
+    height: 26px;
+    min-width: 40px;
+    padding: 0 8px;
+    border-radius: 13px;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.sp-pill.active {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+}
+.sp-pill-line {
+    display: block;
+    width: 22px;
+    border-radius: 2px;
+    background: currentColor;
+    color: var(--color-text-muted);
+}
+.sp-pill.active .sp-pill-line {
+    color: var(--color-primary);
+}
+.sp-eraser-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+}
+.sp-eraser-opt[hidden] {
+    display: none !important;
+}
+.sp-popover {
+    position: absolute;
+    top: 100%;
+    left: 8px;
+    margin-top: 6px;
+    z-index: calc(var(--zi-fab) + 2);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+}
+.sp-popover[hidden] {
+    display: none !important;
+}
+.sp-popover label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+.sp-popover label[hidden] {
+    display: none !important;
+}
+#sp-pop-color {
+    width: 36px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+}
+#sp-pop-width {
+    flex: 1;
+}
+#sp-pop-width-val {
+    min-width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 #scratchpad-toolbar-toggle {
     display: none;
 }
 
-/* R7: จอเล็ก — toolbar ลอยมุมขวาล่าง ยุบเหลือปุ่มกลม */
+/* R7 (Q13b): จอเล็ก — toolbar เป็น sheet ติดขอบล่าง, ปุ่มกลมเปิด/ปิด */
 @media (max-width: 767px) {
     #scratchpad-toolbar {
         position: fixed;
-        bottom: 80px;
-        right: 8px;
-        z-index: var(--zi-fab);
-        flex-direction: column;
-        gap: 6px;
-        padding: 8px;
+        left: 0;
+        right: 0;
+        bottom: 0;
         margin: 0;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+        width: auto;
+        max-width: none;
+        z-index: var(--zi-fab);
+        border-radius: 14px 14px 0 0;
+        border-bottom: none;
+        padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
         background: var(--color-surface);
-        transform-origin: bottom right;
-        transition: transform 0.2s ease, opacity 0.2s ease;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, .18);
+        gap: 8px;
+        transform: translateY(0);
+        transition: transform 0.22s ease, opacity 0.22s ease;
     }
     #scratchpad-toolbar.collapsed {
-        transform: scale(0);
+        transform: translateY(110%);
         opacity: 0;
         pointer-events: none;
     }
+    .sp-row {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    .sp-row::-webkit-scrollbar {
+        display: none;
+    }
+    #scratchpad-toolbar .sp-tool,
+    #scratchpad-toolbar .sp-act,
+    .sp-dot,
+    .sp-pill {
+        flex: 0 0 auto;
+    }
+    #scratchpad-toolbar .sp-tool,
+    #scratchpad-toolbar .sp-act {
+        width: 40px;
+        height: 40px;
+    }
     #scratchpad-toolbar .sp-sep {
-        width: 22px;
-        height: 1px;
-        margin: 3px 0;
+        width: 1px;
+        height: 22px;
+        margin: 0 3px;
+    }
+    .sp-popover {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 100%;
+        top: auto;
+        margin: 0 0 8px 0;
+        min-width: 0;
     }
     #scratchpad-toolbar-toggle {
         display: flex;
@@ -148,6 +307,9 @@
 
 /* ธีมมืด */
 [data-theme="dark"] #scratchpad-toolbar {
+    border-color: var(--color-border);
+}
+[data-theme="dark"] .sp-popover {
     border-color: var(--color-border);
 }
 

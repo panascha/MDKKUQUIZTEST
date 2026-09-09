@@ -1159,17 +1159,39 @@
                 <span>Tip: Double-tap or select any word in the question or choices to translate instantly.</span>
                 <button type="button" id="glossary-tap-hint-close" title="Dismiss">&times;</button>
             </div>
-            <!-- Scratchpad toolbar — ยุบเป็นปุ่มกลมบนจอเล็ก (js/scratchpad.js คุม collapsed ผ่าน localStorage) -->
+            <!-- Scratchpad toolbar สองชั้น: แถวเครื่องมือ + แถว preset ตามเครื่องมือ (js/scratchpad.js คุม state/collapsed/prefs) -->
             <div id="scratchpad-toolbar" class="collapsed" role="toolbar" aria-label="เครื่องมือเขียนบนโจทย์">
-                <button type="button" class="sp-tool" data-sp-tool="pen" title="ปากกา"><i class="fas fa-pen"></i></button>
-                <button type="button" class="sp-tool" data-sp-tool="highlighter" title="ปากกาเน้นข้อความ"><i class="fas fa-highlighter"></i></button>
-                <button type="button" class="sp-tool" data-sp-tool="eraser" title="ยางลบ"><i class="fas fa-eraser"></i></button>
-                <span class="sp-sep"></span>
-                <button type="button" class="sp-act" data-sp-act="undo" title="ย้อนกลับ"><i class="fas fa-rotate-left"></i></button>
-                <button type="button" class="sp-act" data-sp-act="redo" title="ทำซ้ำ"><i class="fas fa-rotate-right"></i></button>
-                <button type="button" class="sp-act" data-sp-act="clear" title="ล้างทั้งข้อ"><i class="fas fa-trash-alt"></i></button>
-                <span class="sp-sep"></span>
-                <button type="button" class="sp-act" data-sp-act="finger" title="วาดด้วยนิ้ว (เปิด/ปิด)"><i class="fas fa-hand-pointer"></i></button>
+                <div class="sp-row sp-row-tools">
+                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="ball" title="ปากกาลูกลื่น"><i class="fas fa-pen"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="fountain" title="ปากกาหมึกซึม"><i class="fas fa-pen-nib"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="pen" data-sp-style="brush" title="พู่กัน"><i class="fas fa-paintbrush"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="highlighter" title="ปากกาเน้นข้อความ"><i class="fas fa-highlighter"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="tape" title="เทปปิดคำตอบ (เร็วๆ นี้)" disabled><i class="fas fa-tape"></i></button>
+                    <button type="button" class="sp-tool" data-sp-tool="eraser" title="ยางลบ"><i class="fas fa-eraser"></i></button>
+                    <span class="sp-sep"></span>
+                    <button type="button" class="sp-act" data-sp-act="undo" title="ย้อนกลับ"><i class="fas fa-rotate-left"></i></button>
+                    <button type="button" class="sp-act" data-sp-act="redo" title="ทำซ้ำ"><i class="fas fa-rotate-right"></i></button>
+                    <button type="button" class="sp-act" data-sp-act="clear" title="ล้างทั้งข้อ"><i class="fas fa-trash-alt"></i></button>
+                    <span class="sp-sep"></span>
+                    <button type="button" class="sp-act" data-sp-act="finger" title="วาดด้วยนิ้ว (เปิด/ปิด)"><i class="fas fa-hand-pointer"></i></button>
+                    <button type="button" class="sp-act" data-sp-act="zen" title="โหมดโฟกัส (เร็วๆ นี้)" disabled><i class="fas fa-expand"></i></button>
+                </div>
+                <div class="sp-row sp-row-ctx">
+                    <div class="sp-presets">
+                        <button type="button" class="sp-dot" data-sp-ci="0" title="สี 1 (กดค้างเพื่อเปลี่ยน)"></button>
+                        <button type="button" class="sp-dot" data-sp-ci="1" title="สี 2 (กดค้างเพื่อเปลี่ยน)"></button>
+                        <button type="button" class="sp-dot" data-sp-ci="2" title="สี 3 (กดค้างเพื่อเปลี่ยน)"></button>
+                        <span class="sp-sep"></span>
+                        <button type="button" class="sp-pill" data-sp-wi="0" title="บาง (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
+                        <button type="button" class="sp-pill" data-sp-wi="1" title="กลาง (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
+                        <button type="button" class="sp-pill" data-sp-wi="2" title="หนา (กดค้างเพื่อปรับ)"><span class="sp-pill-line"></span></button>
+                    </div>
+                    <label class="sp-eraser-opt" hidden><input type="checkbox" id="sp-erase-hl-only"> ลบเฉพาะไฮไลต์</label>
+                </div>
+                <div class="sp-popover" hidden>
+                    <label class="sp-pop-color-wrap"><span>สี</span><input type="color" id="sp-pop-color"></label>
+                    <label class="sp-pop-width-wrap"><span>ความหนา</span><input type="range" id="sp-pop-width" min="0.5" max="12" step="0.5"><output id="sp-pop-width-val"></output></label>
+                </div>
             </div>
             <button type="button" id="scratchpad-toolbar-toggle" title="เครื่องมือเขียน"><i class="fas fa-pen"></i></button>
 
