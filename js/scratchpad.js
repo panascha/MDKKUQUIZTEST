@@ -3,7 +3,9 @@
 // → การ์ดสูงขึ้น/ตัวเลือกสลับที่/รูปโหลดช้า ลายเส้นก็ยังตามเนื้อหาเดิม (ดู Idea/active/scratchpad-apple-pencil-plan.md §3)
 //
 // anchor: 'question' (#question) | 'qimage' (#image-container-div) | 'choice:<oidx>' (ปุ่มตัวเลือกตาม data-oidx) | 'card' (พื้นที่ว่าง)
-// stroke: { tool:'pen'|'highlighter', color, width, aw, anchor, points:[{nx,ny}], causedSelection? } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+// stroke: { tool:'pen'|'highlighter', style?, color, width, aw, anchor, points:[{nx,ny,p?}], causedSelection? } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+//   style: 'ball'|'fountain'|'brush' (Phase 2, pen เท่านั้น) — stroke เก่าไม่มี field นี้ → ถือเป็น 'ball' ตอนวาด ไม่ migrate DB
+//   p: แรงกดจาก Apple Pencil (0–1) มีเฉพาะ pointerType 'pen' — ไม่มี p (นิ้ว/เมาส์/stroke เก่า) → perfect-freehand จำลองแรงกดจากความเร็ว
 //   causedSelection: { qid, previousSelectedAnswer, newSelectedAnswer } เฉพาะ stroke ที่ฝน badge จนเปลี่ยนคำตอบ (undo คืนค่าเดิม)
 // IndexedDB key: scratch_<subjectParam>_<qid> → { qid, subjectParam, strokes, redoStack, updatedAt }
 
@@ -21,9 +23,17 @@
     // Phase 1b: ฝนวงกลม .choice-badge เพื่อเลือกคำตอบ — แยกจาก window.OMR_CONFIG (นั่นของกระดาษ OMR/grader.js)
     var CHOICE_BADGE_RADIUS = 18;    // px รัศมีเป้ารอบจุดกลาง badge (badge กว้าง 30px + เผื่อขอบ)
     var SHADE_COMMIT_FACTOR = 2.5;   // ความยาวเส้นสะสมใน badge ≥ factor × เส้นผ่านศูนย์กลาง → เลือก (≈ ฝน 4 รอบ)
+    // Phase 2 §8 Q1–Q2b: ปากกาทุกแบบวาดผ่าน perfect-freehand — ball thinning:0 = ความหนาคงที่เท่า Phase 1 เป๊ะ
+    var PEN_STYLES = {
+        ball:     { thinning: 0,    smoothing: 0.5, streamline: 0.5 },
+        fountain: { thinning: 0.6,  smoothing: 0.5, streamline: 0.5 },
+        brush:    { thinning: 0.75, smoothing: 0.6, streamline: 0.4, start: { taper: 20 }, end: { taper: 20 } }
+    };
+    var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
     var tool = 'pen';
+    var penStyle = 'ball';
     var dpr = 1;
     var active = null;               // stroke ที่กำลังลาก
     var activeMeta = null;           // { pointerId, wrapLeft, wrapTop, ax, ay, aw, lastX, lastY, badges }
@@ -100,8 +110,39 @@
         c.stroke();
     }
 
+    // perfect-freehand: จุด normalize → px แล้วขอ outline polygon มา fill (ไม่ใช่ stroke เส้นกลาง) ; stroke ที่ commit แล้ว cache path ไว้
+    function penOutline(stroke, rect, isActive) {
+        var cached = !isActive && outlineCache.get(stroke);
+        if (cached && cached.w === rect.w) return cached.path;
+        var pts = stroke.points;
+        var s = rect.w / (stroke.aw || rect.w);
+        var input = new Array(pts.length);
+        for (var i = 0; i < pts.length; i++) {
+            input[i] = [rect.x + pts[i].nx * rect.w, rect.y + pts[i].ny * rect.w, pts[i].p === undefined ? 0.5 : pts[i].p];
+        }
+        var opts = Object.assign({}, PEN_STYLES[stroke.style] || PEN_STYLES.ball, {
+            size: stroke.width * s,
+            simulatePressure: pts[0].p === undefined,
+            last: !isActive
+        });
+        var outline = window.PerfectFreehand.getStroke(input, opts);
+        var path = new Path2D();
+        if (outline.length) {
+            path.moveTo(outline[0][0], outline[0][1]);
+            for (var j = 1; j < outline.length; j++) path.lineTo(outline[j][0], outline[j][1]);
+            path.closePath();
+        }
+        if (!isActive) outlineCache.set(stroke, { w: rect.w, path: path });
+        return path;
+    }
+    function fillPen(c, stroke, rect, isActive) {
+        if (!stroke.points.length) return;
+        c.fillStyle = stroke.color;
+        c.fill(penOutline(stroke, rect, isActive));
+    }
+
     // R2: ปากกาเน้น วาดลง offscreen ก่อน (ไม่ blend) แล้วค่อย composite ทีเดียว → รอยต่อระหว่าง segment ไม่เข้มซ้อน
-    function drawStroke(stroke, rect) {
+    function drawStroke(stroke, rect, isActive) {
         if (stroke.tool === 'highlighter') {
             offCtx.clearRect(0, 0, canvas.width, canvas.height);
             offCtx.globalAlpha = HL_ALPHA;
@@ -114,7 +155,7 @@
             ctx.restore();
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         } else {
-            strokePath(ctx, stroke, rect);
+            fillPen(ctx, stroke, rect, isActive);
         }
     }
 
@@ -129,7 +170,7 @@
             var rect = rects[stroke.anchor];
             if (rect) drawStroke(stroke, rect);
         });
-        if (active && activeMeta) drawStroke(active, { x: activeMeta.ax, y: activeMeta.ay, w: activeMeta.aw });
+        if (active && activeMeta) drawStroke(active, { x: activeMeta.ax, y: activeMeta.ay, w: activeMeta.aw }, true);
     }
 
     var resizeTimer = null;
@@ -328,13 +369,22 @@
             anchor: anchor,
             points: []
         };
+        if (tool === 'pen') active.style = penStyle;
         activeMeta = {
             pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, ax: rect.x, ay: rect.y, aw: rect.w, lastX: px, lastY: py,
-            badges: canShadeSelect() ? collectBadges(w.left, w.top) : []
+            badges: canShadeSelect() ? collectBadges(w.left, w.top) : [],
+            pressure: e.pointerType === 'pen'
         };
-        active.points.push({ nx: (px - rect.x) / rect.w, ny: (py - rect.y) / rect.w });
+        active.points.push(makePoint(px, py, e));
         beginCapture(e);
         requestRender();
+    }
+
+    // Q2: เก็บ p เฉพาะ Pencil — นิ้ว/เมาส์ไม่มี p ให้ perfect-freehand จำลองจากความเร็ว (simulatePressure)
+    function makePoint(px, py, e) {
+        var pt = { nx: (px - activeMeta.ax) / activeMeta.aw, ny: (py - activeMeta.ay) / activeMeta.aw };
+        if (activeMeta.pressure) pt.p = e.pressure;
+        return pt;
     }
 
     function beginCapture(e) {
@@ -352,7 +402,7 @@
         if (dx * dx + dy * dy < DECIMATE_SQ) return;
         accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
         activeMeta.lastX = px; activeMeta.lastY = py;
-        active.points.push({ nx: (px - activeMeta.ax) / activeMeta.aw, ny: (py - activeMeta.ay) / activeMeta.aw });
+        active.points.push(makePoint(px, py, e));
         requestRender();
     }
 
@@ -368,7 +418,7 @@
                 // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation
                 var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
                 accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
-                active.points.push({ nx: (px - activeMeta.ax) / activeMeta.aw, ny: (py - activeMeta.ay) / activeMeta.aw });
+                active.points.push(makePoint(px, py, e));
                 var caused = commitShade();
                 if (caused) active.causedSelection = caused;
                 var st = state();
@@ -440,6 +490,12 @@
             b.classList.toggle('active', b.dataset.spTool === t);
         });
     }
+    // ปุ่มเลือกแบบปากกามาใน step 2 (toolbar สองชั้น) — ตอนนี้สลับผ่าน console ได้เพื่อทดสอบ
+    window.setScratchpadPenStyle = function (s) {
+        if (!PEN_STYLES[s]) return false;
+        penStyle = s;
+        return true;
+    };
     function updateToolbarState() {
         var st = state();
         var u = toolbar.querySelector('[data-sp-act="undo"]');

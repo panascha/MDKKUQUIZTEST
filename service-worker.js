@@ -33,6 +33,7 @@ const STATIC_ASSETS = [
     'js/chatbot.js',
     'js/glossary.js',
     'js/meq.js',
+    'js/perfect-freehand.js',
     'js/scratchpad.js',
     'js/similar.js',
     'js/study-sets.js',
