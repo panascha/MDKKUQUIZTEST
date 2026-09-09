@@ -3,7 +3,8 @@
 // → การ์ดสูงขึ้น/ตัวเลือกสลับที่/รูปโหลดช้า ลายเส้นก็ยังตามเนื้อหาเดิม (ดู Idea/active/scratchpad-apple-pencil-plan.md §3)
 //
 // anchor: 'question' (#question) | 'qimage' (#image-container-div) | 'choice:<oidx>' (ปุ่มตัวเลือกตาม data-oidx) | 'card' (พื้นที่ว่าง)
-// stroke: { tool:'pen'|'highlighter', style?, color, width, aw, anchor, points:[{nx,ny,p?}], causedSelection? } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+// stroke: { tool:'pen'|'highlighter', style?, color, width, aw, anchor, points:[{nx,ny,p?}], shapeType?, causedSelection? } — aw = ความกว้าง anchor ตอนวาด (px) ใช้สเกลความหนา
+//   shapeType: 'line'|'ellipse'|'rect' เฉพาะ stroke ที่วาดค้างจน snap (Phase 2 Q8) — points เป็นเส้นสังเคราะห์แล้ว renderer ไม่ต้องรู้
 //   style: 'ball'|'fountain'|'brush' (Phase 2, pen เท่านั้น) — stroke เก่าไม่มี field นี้ → ถือเป็น 'ball' ตอนวาด ไม่ migrate DB
 //   p: แรงกดจาก Apple Pencil (0–1) มีเฉพาะ pointerType 'pen' — ไม่มี p (นิ้ว/เมาส์/stroke เก่า) → perfect-freehand จำลองแรงกดจากความเร็ว
 //   causedSelection: { qid, previousSelectedAnswer, newSelectedAnswer } เฉพาะ stroke ที่ฝน badge จนเปลี่ยนคำตอบ (undo คืนค่าเดิม)
@@ -36,6 +37,12 @@
         fountain: { thinning: 0.6,  smoothing: 0.5, streamline: 0.5 },
         brush:    { thinning: 0.75, smoothing: 0.6, streamline: 0.4, start: { taper: 20 }, end: { taper: 20 } }
     };
+    // Phase 2 §8 Q6–Q8/Q12: วาดค้าง → snap เป็นรูปทรง (เส้นตรง / วงรี / สี่เหลี่ยม) — ไฮไลต์ได้แค่เส้นตรง
+    var HOLD_MS = 450;               // ปากกานิ่งนานเท่านี้ (ยังไม่ยก) → ลอง snap
+    var HOLD_JITTER_PX = 6;          // ขยับไม่เกินนี้ยังนับว่านิ่ง
+    var SNAP_MIN_BBOX = 24;          // px กรอบเส้นต้องกว้างหรือสูงอย่างน้อยเท่านี้ถึงจะเริ่มจับเวลา
+    var ELLIPSE_PTS = 40;
+    var RECT_EDGE_PTS = 12;          // มุมสี่เหลี่ยมต้องมีจุดถี่ ไม่งั้น streamline ของ perfect-freehand ดึงมุมจนเบี้ยว
     var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
@@ -410,11 +417,97 @@
         activeMeta = {
             pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, ax: rect.x, ay: rect.y, aw: rect.w, lastX: px, lastY: py,
             badges: canShadeSelect() ? collectBadges(w.left, w.top) : [],
-            pressure: e.pointerType === 'pen'
+            pressure: e.pointerType === 'pen',
+            raw: [[px, py]], minX: px, maxX: px, minY: py, maxY: py,
+            holdX: px, holdY: py, holdTimer: null
         };
         active.points.push(makePoint(px, py, e));
         beginCapture(e);
         requestRender();
+    }
+
+    // ─── Draw-and-hold shape snap (Q6–Q8, Q12) ───────────────
+    // ไม่ snap บนปุ่มตัวเลือกหรือเส้นที่แตะเข้าเขต badge — กันชนกับการฝนเลือกคำตอบ (Phase 1b)
+    function canSnap() {
+        if (!active || active._snapped || active.anchor.indexOf('choice:') === 0) return false;
+        var badges = activeMeta.badges;
+        for (var i = 0; i < badges.length; i++) if (badges[i].len > 0) return false;
+        return true;
+    }
+    function trackHold(px, py) {
+        var m = activeMeta;
+        m.raw.push([px, py]);
+        if (px < m.minX) m.minX = px; if (px > m.maxX) m.maxX = px;
+        if (py < m.minY) m.minY = py; if (py > m.maxY) m.maxY = py;
+        if (Math.hypot(px - m.holdX, py - m.holdY) <= HOLD_JITTER_PX) return;
+        m.holdX = px; m.holdY = py;
+        clearHold();
+        if (!canSnap()) return;
+        if (m.maxX - m.minX < SNAP_MIN_BBOX && m.maxY - m.minY < SNAP_MIN_BBOX) return;
+        m.holdTimer = setTimeout(trySnap, HOLD_MS);
+    }
+    function clearHold() {
+        if (activeMeta && activeMeta.holdTimer) { clearTimeout(activeMeta.holdTimer); activeMeta.holdTimer = null; }
+    }
+    function trySnap() {
+        if (!activeMeta) return;
+        activeMeta.holdTimer = null;
+        if (!canSnap()) return;
+        var shape = classifyShape(activeMeta.raw, active.tool === 'highlighter');
+        if (!shape) return;
+        var pts = synthesizeShape(shape, activeMeta);
+        active.points = pts.map(function (p) {
+            var pt = { nx: (p[0] - activeMeta.ax) / activeMeta.aw, ny: (p[1] - activeMeta.ay) / activeMeta.aw };
+            if (activeMeta.pressure) pt.p = 0.5;
+            return pt;
+        });
+        active.shapeType = shape;
+        active._snapped = true;
+        requestRender();
+    }
+    // line: ทุกจุดห่างจากคอร์ดต้น→ปลายไม่เกิน max(6px, 8% ของคอร์ด) ; closed: ต้น-ปลายใกล้กัน ;
+    // rect vs ellipse: พื้นที่ (shoelace) / พื้นที่กรอบ — วงกลมวาดมือ ≈ 0.78, สี่เหลี่ยม ≈ 0.9+
+    function classifyShape(raw, lineOnly) {
+        var n = raw.length;
+        if (n < 3) return null;
+        var x0 = raw[0][0], y0 = raw[0][1], xn = raw[n - 1][0], yn = raw[n - 1][1];
+        var chord = Math.hypot(xn - x0, yn - y0);
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxDev = 0, area = 0;
+        for (var i = 0; i < n; i++) {
+            var x = raw[i][0], y = raw[i][1];
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            var dev = chord > 0 ? Math.abs((xn - x0) * (y0 - y) - (x0 - x) * (yn - y0)) / chord : Math.hypot(x - x0, y - y0);
+            if (dev > maxDev) maxDev = dev;
+            var j = (i + 1) % n;
+            area += x * raw[j][1] - raw[j][0] * y;
+        }
+        if (maxDev <= Math.max(6, chord * 0.08)) return 'line';
+        if (lineOnly) return null;
+        var bw = maxX - minX, bh = maxY - minY;
+        if (chord > Math.max(bw, bh) * 0.2 + 10) return null;
+        return Math.abs(area) / 2 / (bw * bh) >= 0.86 ? 'rect' : 'ellipse';
+    }
+    function synthesizeShape(shape, m) {
+        var raw = m.raw;
+        if (shape === 'line') return [raw[0], raw[raw.length - 1]];
+        var x1 = m.minX, y1 = m.minY, x2 = m.maxX, y2 = m.maxY;
+        var out = [], i, t;
+        if (shape === 'rect') {
+            var c = [[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]];
+            for (var e = 0; e < 4; e++) for (i = 0; i < RECT_EDGE_PTS; i++) {
+                t = i / RECT_EDGE_PTS;
+                out.push([c[e][0] + (c[e + 1][0] - c[e][0]) * t, c[e][1] + (c[e + 1][1] - c[e][1]) * t]);
+            }
+            out.push([x1, y1]);
+            return out;
+        }
+        var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, rx = (x2 - x1) / 2, ry = (y2 - y1) / 2;
+        for (i = 0; i <= ELLIPSE_PTS; i++) {
+            t = (i % ELLIPSE_PTS) / ELLIPSE_PTS * Math.PI * 2;
+            out.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+        }
+        return out;
     }
 
     // Q2: เก็บ p เฉพาะ Pencil — นิ้ว/เมาส์ไม่มี p ให้ perfect-freehand จำลองจากความเร็ว (simulatePressure)
@@ -435,11 +528,13 @@
         if (!activeMeta || e.pointerId !== activeMeta.pointerId) return;
         var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
         if (activeMeta.erasing) { eraseAt(px, py); return; }
+        if (active._snapped) return;   // Q7: snap แล้วล็อกจนยกปากกา
         var dx = px - activeMeta.lastX, dy = py - activeMeta.lastY;
         if (dx * dx + dy * dy < DECIMATE_SQ) return;
         accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
         activeMeta.lastX = px; activeMeta.lastY = py;
         active.points.push(makePoint(px, py, e));
+        trackHold(px, py);
         requestRender();
     }
 
@@ -449,15 +544,19 @@
         canvas.style.pointerEvents = 'none';
         wrapper.classList.remove('scratchpad-drawing');
         suppressClickUntil = Date.now() + 400;
+        clearHold();
 
         if (active) {
             if (e.type !== 'pointercancel') {
-                // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation
-                var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
-                accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
-                active.points.push(makePoint(px, py, e));
+                // R6: จุดสุดท้ายเก็บเสมอ ไม่ผ่าน decimation (ยกเว้น stroke ที่ snap แล้ว)
+                if (!active._snapped) {
+                    var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
+                    accumulateShade(activeMeta.lastX, activeMeta.lastY, px, py);
+                    active.points.push(makePoint(px, py, e));
+                }
                 var caused = commitShade();
                 if (caused) active.causedSelection = caused;
+                delete active._snapped;
                 var st = state();
                 st.strokes.push(active);
                 st.redoStack = [];
