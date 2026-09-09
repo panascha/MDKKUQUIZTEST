@@ -27,7 +27,7 @@
     var LONG_PRESS_MS = 500;
     var ERASER_RADIUS = 12;          // px
     var DECIMATE_SQ = 4;             // R6: ข้ามจุดที่ห่างจากจุดก่อน < 2px
-    var PALM_BLOB_PX = 40;           // นิ้ว/ฝ่ามือกว้างเกินนี้ = ฝ่ามือ ไม่วาด
+    var PALM_BLOB_PX = 60;           // Phase 3: ปัดทิ้งเมื่อกว้าง "ทั้งสองแกน" เกินนี้ = ฝ่ามือ (เดิม 40 และใช้ AND-เล็ก → iPad รายงานนิ้ว 40–60 เลยวาดไม่ติดเลย)
     var SAVE_DEBOUNCE_MS = 300;
     var TOOLBAR_COLLAPSED_KEY = 'scratchpad_toolbar_collapsed';
     // Phase 1b: ฝนวงกลม .choice-badge เพื่อเลือกคำตอบ — แยกจาก window.OMR_CONFIG (นั่นของกระดาษ OMR/grader.js)
@@ -59,6 +59,12 @@
         light: { fill: '#dfe3ea', edge: '#94a3b8' },
         dark:  { fill: '#3a4250', edge: '#64748b' }
     };
+    // Phase 3: ท่าทาง (Pencil double-tap / สองนิ้ว) + คีย์ลัด + วงบอกรัศมียางลบ
+    var TWO_FINGER_TAP_MS = 300;     // แตะสองนิ้วต้องยกภายในเวลานี้ถึงนับเป็น "แตะ" ไม่ใช่ค้าง
+    var TWO_FINGER_GAP_MS = 400;     // สองแตะห่างกันไม่เกินนี้ = double-tap
+    var TWO_FINGER_MOVE_PX = 24;     // จุดกึ่งกลางสองนิ้วขยับเกินนี้ = ซูม/เลื่อน ไม่ใช่แตะ
+    var ERASER_CURSOR_DASH = [4, 4];
+
     var outlineCache = new WeakMap();  // stroke → { w, path } — outline คำนวณแพง ไม่ต้องทำซ้ำทุกเฟรมตอนลากเส้นใหม่
 
     var wrapper, canvas, ctx, offscreen, offCtx, toolbar;
@@ -76,6 +82,10 @@
     var suppressClickUntil = 0;
     var zenOn = false;               // Q4/Q4b: โหมดโฟกัส — ไม่จำใน localStorage (เปิดแอปใหม่ต้องได้หน้าปกติ)
     var zenPrevCollapsed = false;    // สถานะยุบ toolbar ก่อนเข้า Zen — ออกแล้วคืนค่าเดิม
+    var eraserCursor = null;         // { x, y } ตำแหน่งวงยางลบบน wrapper — null = ไม่ต้องวาด
+    var lastNonEraserTool = null;    // เครื่องมือก่อนสลับไปยางลบ (Pencil double-tap สลับกลับ)
+    var twoFinger = null;            // { t, cx, cy, moved } ระหว่างแตะสองนิ้ว
+    var lastTwoFingerTapAt = 0;
 
     function subjectParam() {
         return new URLSearchParams(window.location.search).get('subject') || 'default';
@@ -110,6 +120,11 @@
         try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { }
     }
     function presetGroup() { return tool === 'highlighter' ? prefs.hl : prefs.pen; }
+    // รัศมียางลบที่ใช้จริง — prefs ยังไม่มีค่า (ก่อน slider ของ Batch B) ก็ถอยไปใช้ค่าคงที่เดิม
+    function eraserRadius() {
+        var r = prefs.eraserRadius;
+        return r > 0 ? r : ERASER_RADIUS;
+    }
 
     // ─── Anchor ───────────────────────────────────────────────
     function anchorFromTarget(target) {
@@ -258,11 +273,34 @@
         }
     }
 
+    // Phase 3 req 8: วงประบอกรัศมียางลบที่ปลายปากกา/เมาส์ — วาดทับสุดท้าย ไม่เก็บลง strokes ไม่เข้า PDF
+    function drawEraserCursor() {
+        if (!eraserCursor || tool !== 'eraser') return;
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.setLineDash(ERASER_CURSOR_DASH);
+        ctx.strokeStyle = isDark() ? 'rgba(255,255,255,.85)' : 'rgba(30,30,30,.75)';
+        ctx.beginPath();
+        ctx.arc(eraserCursor.x, eraserCursor.y, eraserRadius(), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+    function setEraserCursor(x, y) {
+        if (tool !== 'eraser') { if (eraserCursor) { eraserCursor = null; requestRender(); } return; }
+        eraserCursor = { x: x, y: y };
+        requestRender();
+    }
+    function clearEraserCursor() {
+        if (!eraserCursor) return;
+        eraserCursor = null;
+        requestRender();
+    }
+
     function renderAll() {
         if (!resizeCanvas()) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         var st = state();
-        if (!st) return;
+        if (!st) { drawEraserCursor(); return; }
         var rects = {};
         // เทปวาดก่อนหมึกเสมอ → เทปบังแค่เนื้อหาการ์ด (ใต้ canvas) ลายมือที่เขียนไว้ยังเห็นทับเทป
         st.tapes.forEach(function (t) {
@@ -277,6 +315,7 @@
             if (rect) drawStroke(stroke, rect);
         });
         if (active && activeMeta) drawStroke(active, { x: activeMeta.ax, y: activeMeta.ay, w: activeMeta.aw }, true);
+        drawEraserCursor();
     }
 
     var resizeTimer = null;
@@ -349,7 +388,7 @@
     function strokeHit(stroke, rect, px, py) {
         var pts = stroke.points;
         var s = rect.w / (stroke.aw || rect.w);
-        var thr = ERASER_RADIUS + (stroke.width * s) / 2;
+        var thr = eraserRadius() + (stroke.width * s) / 2;
         if (pts.length === 1) {
             return Math.hypot(px - (rect.x + pts[0].nx * rect.w), py - (rect.y + pts[0].ny * rect.w)) < thr;
         }
@@ -569,9 +608,12 @@
     }
 
     // ─── Pointer router ──────────────────────────────────────
+    // Phase 3 req 9: ปัดฝ่ามือต้อง "ใหญ่ทั้งสองแกน" ถึงจะทิ้ง — เกณฑ์เดิม (เล็กทั้งสองแกน ถึงจะวาด) ตัดนิ้วจริงบน iPad
+    // ทิ้งหมด เพราะ Safari รายงาน PointerEvent.width/height ของนิ้วราว 40–60px วาดด้วยนิ้วเลยไม่ทำงานเลย
     function wantsDraw(e) {
         if (e.pointerType === 'pen') return true;
-        if (e.pointerType === 'touch' && window.APP._fingerDrawMode) return e.width < PALM_BLOB_PX && e.height < PALM_BLOB_PX;
+        if (twoFinger) return false;             // อยู่ระหว่างท่าทางสองนิ้ว ไม่ใช่การวาด
+        if (e.pointerType === 'touch' && window.APP._fingerDrawMode) return !(e.width >= PALM_BLOB_PX && e.height >= PALM_BLOB_PX);
         if (e.pointerType === 'mouse' && window.APP._fingerDrawMode) return true;
         return false;
     }
@@ -590,6 +632,7 @@
         if (tool === 'eraser') {
             activeMeta = { pointerId: e.pointerId, wrapLeft: w.left, wrapTop: w.top, erasing: true };
             beginCapture(e);
+            setEraserCursor(px, py);
             eraseAt(px, py);
             return;
         }
@@ -745,7 +788,7 @@
     function onPointerMove(e) {
         if (!activeMeta || e.pointerId !== activeMeta.pointerId) return;
         var px = e.clientX - activeMeta.wrapLeft, py = e.clientY - activeMeta.wrapTop;
-        if (activeMeta.erasing) { eraseAt(px, py); return; }
+        if (activeMeta.erasing) { setEraserCursor(px, py); eraseAt(px, py); return; }
         if (activeMeta.taping) { sizeTape(px, py); requestRender(); return; }
         if (active._snapped) return;   // Q7: snap แล้วล็อกจนยกปากกา
         var dx = px - activeMeta.lastX, dy = py - activeMeta.lastY;
@@ -811,6 +854,18 @@
         renderAll();
     }
 
+    // ทิ้งเส้น/เทปที่กำลังลากโดยไม่บันทึก — ใช้ตอนนิ้วที่สองแตะลงมา (เป็นท่าทาง ไม่ใช่การวาด)
+    function abortActive() {
+        if (!activeMeta) return;
+        clearHold();
+        try { canvas.releasePointerCapture(activeMeta.pointerId); } catch (err) { }
+        canvas.style.pointerEvents = 'none';
+        wrapper.classList.remove('scratchpad-drawing');
+        clearShadingClass();
+        active = null; activeTape = null; activeMeta = null;
+        renderAll();
+    }
+
     function requestRender() {
         if (rafPending) return;
         rafPending = true;
@@ -821,11 +876,48 @@
     function onTouchGuard(e) {
         var t = e.touches[0];
         if (!t) return;
-        if (t.touchType === 'stylus' || window.APP._fingerDrawMode) {
-            if (e.target.closest('textarea, input, [contenteditable]')) return;
-            if (wrapper.classList.contains('scratchpad-disabled')) return;
-            e.preventDefault();
+        if (e.touches.length > 1) return;        // สองนิ้วขึ้นไป = ท่าทาง/ซูม ปล่อยให้ onTwoFingerTouch จัดการ
+        var stylus = t.touchType === 'stylus';
+        if (!stylus && !window.APP._fingerDrawMode) return;
+        if (e.target.closest('textarea, input, [contenteditable]')) return;
+        if (wrapper.classList.contains('scratchpad-disabled')) return;
+        // Phase 3 req 9: โหมดนิ้ว กันเฉพาะตอนลาก (touchmove) — กัน touchstart จะฆ่า click สังเคราะห์
+        // ทำให้แตะเลือกตัวเลือก/เปิดเทปไม่ได้ ; หน้าไม่เลื่อนอยู่แล้วเพราะ .scratchpad-finger ตั้ง touch-action:none
+        if (!stylus && e.type === 'touchstart') return;
+        e.preventDefault();
+    }
+
+    // ─── ท่าทางสองนิ้ว (Phase 3 req 2a): แตะสองนิ้วสองครั้ง = undo แบบ GoodNotes/Procreate ─
+    // อ่านจาก touch event เพราะ pointer event แยก "สองนิ้วพร้อมกัน" ไม่ได้ในตัวเอง
+    function touchCentroid(list) {
+        var x = 0, y = 0;
+        for (var i = 0; i < list.length; i++) { x += list[i].clientX; y += list[i].clientY; }
+        return { x: x / list.length, y: y / list.length };
+    }
+    function onTwoFingerTouch(e) {
+        if (wrapper.classList.contains('scratchpad-disabled')) return;
+        if (e.type === 'touchstart') {
+            if (e.touches.length !== 2) { if (e.touches.length > 2) twoFinger = null; return; }
+            abortActive();                       // นิ้วแรกอาจเริ่มลากไปแล้ว — ทิ้ง ไม่บันทึกเป็นเส้น
+            var c = touchCentroid(e.touches);
+            twoFinger = { t: Date.now(), cx: c.x, cy: c.y, moved: false };
+            return;
         }
+        if (!twoFinger) return;
+        if (e.type === 'touchmove') {
+            if (e.touches.length !== 2) { twoFinger.moved = true; return; }
+            var m = touchCentroid(e.touches);
+            if (Math.hypot(m.x - twoFinger.cx, m.y - twoFinger.cy) > TWO_FINGER_MOVE_PX) twoFinger.moved = true;
+            return;
+        }
+        // touchend / touchcancel — ตัดสินตอนนิ้วแรกยก แล้วเคลียร์ (นิ้วที่สองยกทีหลังจะ return ที่ !twoFinger)
+        var g = twoFinger;
+        twoFinger = null;
+        suppressClickUntil = Date.now() + 400;   // ยกสองนิ้วแล้วอย่าให้ click หลุดไปโดนตัวเลือก
+        if (e.type === 'touchcancel' || g.moved || Date.now() - g.t > TWO_FINGER_TAP_MS) { lastTwoFingerTapAt = 0; return; }
+        var now = Date.now();
+        if (now - lastTwoFingerTapAt <= TWO_FINGER_GAP_MS) { lastTwoFingerTapAt = 0; undo(); }
+        else lastTwoFingerTapAt = now;
     }
 
     // ─── Undo / Redo / Clear ─────────────────────────────────
@@ -865,6 +957,7 @@
     // Q13: ปุ่ม Ball/Fountain/Brush = tool 'pen' + data-sp-style — คลิกเดียวตั้งทั้งคู่ ; แบบปากกาจำใน prefs
     function setTool(t, style) {
         tool = t;
+        if (t !== 'eraser') eraserCursor = null;   // เปลี่ยนไปเครื่องมืออื่น วงยางลบต้องหายทันที
         if (t === 'pen' && PEN_STYLES[style]) { prefs.penStyle = style; savePrefs(); }
         toolbar.querySelectorAll('.sp-tool').forEach(function (b) {
             var on = b.dataset.spTool === t && (t !== 'pen' || b.dataset.spStyle === prefs.penStyle);
@@ -872,6 +965,7 @@
         });
         hidePopover();
         renderCtxRow();
+        requestRender();       // วงยางลบเพิ่งถูกล้าง/เพิ่งใช้ได้ — ต้องวาด canvas ใหม่
     }
     // แถว 2 ตามเครื่องมือ: ปากกา/ไฮไลต์ = จุดสี + pill ความหนา ; ยางลบ = checkbox ; อื่นๆ ซ่อนทั้งแถว
     function renderCtxRow() {
@@ -971,6 +1065,32 @@
         if (r) r.disabled = !st || !st.redoStack.length;
         if (c) c.disabled = !st || (!st.strokes.length && !st.redoStack.length && !st.tapes.length);
     }
+    // ─── Phase 3 req 1: Apple Pencil แตะสองครั้งที่ก้าน ─────
+    // Safari/iPadOS ยิง webkitpencilaction ที่ window (ไม่มีในเบราว์เซอร์อื่น — ทดสอบจริงได้บน iPad เท่านั้น)
+    function togglePenEraser() {
+        if (tool === 'eraser') setTool(lastNonEraserTool || 'pen', prefs.penStyle);
+        else { lastNonEraserTool = tool; setTool('eraser'); }
+    }
+    function onPencilAction(e) {
+        if (e && e.cancelable) e.preventDefault();
+        togglePenEraser();
+    }
+
+    // ─── Phase 3 req 2b: คีย์ลัด undo/redo ทั้งหน้า ─────────
+    // ไม่ทำงานเมื่อเคอร์เซอร์อยู่ในช่องพิมพ์ (MEQ textarea / ช่องค้นหา / chatbot) หรือมี modal เปิดอยู่
+    function isTypingTarget(el) {
+        return !!(el && el.closest && el.closest('input, textarea, select, [contenteditable="true"]'));
+    }
+    function onKeyDown(e) {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+        if (isTypingTarget(document.activeElement)) return;
+        if (!wrapper || wrapper.classList.contains('scratchpad-disabled')) return;
+        if (!state()) return;
+        var k = (e.key || '').toLowerCase();
+        if (k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+        else if (k === 'y' && !e.shiftKey) { e.preventDefault(); redo(); }
+    }
+
     function setFingerMode(on) {
         window.APP._fingerDrawMode = on;
         wrapper.classList.toggle('scratchpad-finger', on);
@@ -1169,6 +1289,21 @@
         canvas.addEventListener('pointercancel', onPointerEnd);
         wrapper.addEventListener('touchstart', onTouchGuard, { passive: false });
         wrapper.addEventListener('touchmove', onTouchGuard, { passive: false });
+        // Phase 3: ท่าทางสองนิ้ว — ผูกก่อน onTouchGuard ไม่ได้ (คนละ handler) แต่ onTouchGuard ปล่อยผ่านเมื่อ >1 นิ้วอยู่แล้ว
+        wrapper.addEventListener('touchstart', onTwoFingerTouch, { passive: true });
+        wrapper.addEventListener('touchmove', onTwoFingerTouch, { passive: true });
+        wrapper.addEventListener('touchend', onTwoFingerTouch, { passive: true });
+        wrapper.addEventListener('touchcancel', onTwoFingerTouch, { passive: true });
+        // Phase 3 req 8: วงยางลบตามเมาส์/ปากกาแม้ยังไม่กด (canvas ปิด pointer-events ตอนว่าง จึงฟังที่ wrapper)
+        wrapper.addEventListener('pointermove', function (e) {
+            if (tool !== 'eraser' || activeMeta) return;
+            var w = wrapper.getBoundingClientRect();
+            setEraserCursor(e.clientX - w.left, e.clientY - w.top);
+        });
+        wrapper.addEventListener('pointerleave', clearEraserCursor);
+        document.addEventListener('keydown', onKeyDown);
+        window.addEventListener('webkitpencilaction', onPencilAction);
+        window.addEventListener('pencilaction', onPencilAction);
         // click ที่หลุดมาหลังยกปากกา (เช่น ตอน capture ล้มเหลวบน WebKit) ห้ามไปกดตัวเลือก
         // Q10: แตะโดนเทป = เปิด/ปิดเทป ไม่ให้ทะลุไปเลือกคำตอบ ; ไม่โดนเทปก็ปล่อยผ่านตามปกติ (ฟังตลอด ไม่ขึ้นกับเครื่องมือ)
         wrapper.addEventListener('click', function (e) {
