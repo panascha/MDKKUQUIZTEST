@@ -204,10 +204,9 @@
         c.stroke();
     }
 
-    // perfect-freehand: จุด normalize → px แล้วขอ outline polygon มา fill (ไม่ใช่ stroke เส้นกลาง) ; stroke ที่ commit แล้ว cache path ไว้
-    function penOutline(stroke, rect, isActive) {
-        var cached = !isActive && outlineCache.get(stroke);
-        if (cached && cached.w === rect.w) return cached.path;
+    // perfect-freehand: จุด normalize → หน่วยของ rect แล้วขอ outline polygon กลับมา (ไม่ใช่ stroke เส้นกลาง)
+    // rect ใช้หน่วยอะไรก็ได้ — บนจอส่ง px, ตอนออก PDF ส่ง mm → ได้รูปทรงเดียวกันเป๊ะ ต่างแค่สเกล
+    function strokeOutline(stroke, rect, isActive) {
         var pts = stroke.points;
         var s = rect.w / (stroke.aw || rect.w);
         var input = new Array(pts.length);
@@ -219,7 +218,13 @@
             simulatePressure: pts[0].p === undefined,
             last: !isActive
         });
-        var outline = window.PerfectFreehand.getStroke(input, opts);
+        return window.PerfectFreehand.getStroke(input, opts);
+    }
+    // stroke ที่ commit แล้ว cache Path2D ไว้ (เฉพาะการวาดบนจอ — PDF เรียก strokeOutline ตรงๆ ไม่ผ่าน cache)
+    function penOutline(stroke, rect, isActive) {
+        var cached = !isActive && outlineCache.get(stroke);
+        if (cached && cached.w === rect.w) return cached.path;
+        var outline = strokeOutline(stroke, rect, isActive);
         var path = new Path2D();
         if (outline.length) {
             path.moveTo(outline[0][0], outline[0][1]);
@@ -1085,23 +1090,37 @@
         strokes.forEach(function (stroke) {
             if (stroke.anchor !== anchor || !stroke.points.length) return;
             var pts = stroke.points;
-            var hl = stroke.tool === 'highlighter';
             var rgb = hexToRgb(stroke.color);
             doc.saveGraphicsState();
-            if (hl && typeof doc.GState === 'function') doc.setGState(new doc.GState({ opacity: HL_ALPHA }));
-            doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
-            // ความหนาสเกลตามความกว้าง anchor เหมือนบนจอ: px ต้นทาง → mm ผ่านอัตราส่วน w/aw
-            doc.setLineWidth(stroke.width * w / (stroke.aw || 400));
-            doc.setLineCap(1); doc.setLineJoin(1);
-            var x0 = x + pts[0].nx * w, y0 = y + pts[0].ny * w;
-            if (pts.length === 1) {
-                doc.line(x0, y0, x0 + 0.01, y0);
-            } else {
-                var segs = [];
-                for (var i = 1; i < pts.length; i++) {
-                    segs.push([(pts[i].nx - pts[i - 1].nx) * w, (pts[i].ny - pts[i - 1].ny) * w]);
+            if (stroke.tool === 'highlighter') {
+                // Q3: ปากกาเน้นยังเป็นเส้นแบนทึบเท่ากันตลอด เหมือนบนจอ (ไม่ผ่าน perfect-freehand)
+                if (typeof doc.GState === 'function') doc.setGState(new doc.GState({ opacity: HL_ALPHA }));
+                doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+                // ความหนาสเกลตามความกว้าง anchor เหมือนบนจอ: px ต้นทาง → mm ผ่านอัตราส่วน w/aw
+                doc.setLineWidth(stroke.width * w / (stroke.aw || 400));
+                doc.setLineCap(1); doc.setLineJoin(1);
+                var x0 = x + pts[0].nx * w, y0 = y + pts[0].ny * w;
+                if (pts.length === 1) {
+                    doc.line(x0, y0, x0 + 0.01, y0);
+                } else {
+                    var segs = [];
+                    for (var i = 1; i < pts.length; i++) {
+                        segs.push([(pts[i].nx - pts[i - 1].nx) * w, (pts[i].ny - pts[i - 1].ny) * w]);
+                    }
+                    doc.lines(segs, x0, y0, [1, 1], 'S', false);
                 }
-                doc.lines(segs, x0, y0, [1, 1], 'S', false);
+            } else {
+                // Q14: ปากกาใช้ outline polygon ตัวเดียวกับบนจอ (strokeOutline) แค่ส่ง rect เป็น mm → หัวเรียว/ปลายเรียวใน PDF เหมือนที่เห็น
+                var outline = strokeOutline(stroke, { x: x, y: y, w: w }, false);
+                if (outline.length) {
+                    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                    var poly = [];
+                    for (var j = 1; j < outline.length; j++) {
+                        poly.push([outline[j][0] - outline[j - 1][0], outline[j][1] - outline[j - 1][1]]);
+                    }
+                    // closed=true → jsPDF ปิด subpath ด้วย 'h' แล้ว fill แบบ nonzero ('f') เหมือน canvas ctx.fill() — ปลายเรียวที่เส้นตัดกันเองจึงไม่เป็นรู
+                    doc.lines(poly, outline[0][0], outline[0][1], [1, 1], 'F', true);
+                }
             }
             doc.restoreGraphicsState();
         });
