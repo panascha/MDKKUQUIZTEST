@@ -74,6 +74,8 @@
     var saveTimer = null;
     var loadSeq = 0;
     var suppressClickUntil = 0;
+    var zenOn = false;               // Q4/Q4b: โหมดโฟกัส — ไม่จำใน localStorage (เปิดแอปใหม่ต้องได้หน้าปกติ)
+    var zenPrevCollapsed = false;    // สถานะยุบ toolbar ก่อนเข้า Zen — ออกแล้วคืนค่าเดิม
 
     function subjectParam() {
         return new URLSearchParams(window.location.search).get('subject') || 'default';
@@ -971,6 +973,45 @@
         if (b) b.classList.toggle('active', on);
     }
 
+    // ความกว้างที่การ์ดใช้ "ตอนไม่ Zen" — ถอด class ออกวัดแล้วใส่คืน (getBoundingClientRect บังคับ layout ทันที)
+    // ต้องเท่าเดิมเป๊ะ ไม่งั้นข้อความ reflow ใต้ลายเส้นที่อยู่กับที่ (ลายเส้น normalize ด้วยความกว้าง anchor)
+    // เรียก "หลัง" ใส่ class แล้วเท่านั้น — padding คิดจาก clientWidth ของ overlay (หักแถบเลื่อนของตัวเองแล้ว)
+    // ใช้ % ไม่ได้ เพราะ % คิดจากความกว้างเต็มจอ ยังไม่หัก scrollbar → การ์ดแคบลงเท่าความกว้างแถบเลื่อน
+    function syncZenWidth() {
+        var qc = document.getElementById('quiz-container');
+        if (!qc) return;
+        document.body.classList.remove('sp-zen');
+        var w = wrapper.getBoundingClientRect().width;
+        document.body.classList.add('sp-zen');
+        if (w <= 0) return;
+        qc.style.setProperty('--sp-zen-w', w + 'px');
+        qc.style.setProperty('--sp-zen-pad', Math.max(0, (qc.clientWidth - w) / 2) + 'px');
+    }
+
+    // Q4/Q4b: Zen = โปรโมต #quiz-container เป็น overlay เต็มจอด้วย CSS ล้วน (ดู css/scratchpad.css)
+    // subtree ของ #quiz-card-wrapper ไม่ถูกแตะ — CSS คุมความกว้างให้เท่าเดิมเป๊ะ ข้อความจึงไม่ reflow ใต้ลายเส้น
+    function setZenMode(on) {
+        zenOn = on;
+        document.body.classList.toggle('sp-zen', on);
+        if (on) syncZenWidth();
+        var b = toolbar.querySelector('[data-sp-act="zen"]');
+        if (b) {
+            b.classList.toggle('active', on);
+            b.title = on ? 'ออกจากโหมดโฟกัส' : 'โหมดโฟกัส (เต็มจอ)';
+            var ic = b.querySelector('i');
+            if (ic) ic.className = on ? 'fas fa-compress' : 'fas fa-expand';
+        }
+        // จอเล็ก toolbar ยุบเป็นปุ่มกลมได้ → ปุ่มออกจะหายไป ต้องกางไว้ตลอดใน Zen แล้วคืนสถานะเดิมตอนออก
+        if (on) {
+            zenPrevCollapsed = toolbar.classList.contains('collapsed');
+            toolbar.classList.remove('collapsed');
+        } else {
+            toolbar.classList.toggle('collapsed', zenPrevCollapsed);
+        }
+        // วัด anchor ใหม่หลัง layout นิ่ง — renderAll เรียก resizeCanvas + anchorRect ใหม่ทั้งหมดอยู่แล้ว
+        requestAnimationFrame(renderAll);
+    }
+
     function initToolbar() {
         var toggle = document.getElementById('scratchpad-toolbar-toggle');
         toolbar.addEventListener('click', function (e) {
@@ -991,6 +1032,7 @@
                 case 'redo': redo(); break;
                 case 'clear': clearAll(); break;
                 case 'finger': setFingerMode(!window.APP._fingerDrawMode); break;
+                case 'zen': setZenMode(!zenOn); break;
             }
         });
         toolbar.querySelector('.sp-popover').addEventListener('input', onPopoverInput);
@@ -1014,6 +1056,7 @@
         document.addEventListener('click', function (e) {
             if (toolbar.contains(e.target) || e.target === toggle || toggle.contains(e.target)) return;
             hidePopover();
+            if (zenOn) return;       // Zen: toolbar ต้องกางไว้ ไม่งั้นปุ่มออกหาย
             if (window.innerWidth >= 768) return;
             if (toolbar.classList.contains('collapsed')) return;
             toolbar.classList.add('collapsed');
@@ -1115,7 +1158,10 @@
         }, true);
 
         new ResizeObserver(scheduleRender).observe(wrapper);
-        window.addEventListener('resize', scheduleRender);
+        window.addEventListener('resize', function () {
+            if (zenOn) syncZenWidth();   // หมุนจอตอนอยู่ใน Zen → วัดความกว้างใหม่
+            scheduleRender();
+        });
 
         initToolbar();
         initModalGuard();

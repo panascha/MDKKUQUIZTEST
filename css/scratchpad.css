@@ -405,3 +405,83 @@
         font-size: 0.9rem;
     }
 }
+
+/* =========================================
+   Zen Focus Mode (Phase 2 step 6, Q4/Q4b/Q5)
+   ========================================= */
+
+/* กลไก: โปรโมต #quiz-container (ไม่ใช่ #quiz-card-wrapper) เป็น overlay เต็มจอ —
+   toolbar เป็น "พี่น้อง" ของ wrapper ไม่ใช่ลูก ถ้าโปรโมต wrapper ปุ่มออกจะหลุดออกไป
+   ทั้ง subtree ของ #quiz-card-wrapper (โจทย์/รูป/MEQ/ตัวเลือก/ปุ่มส่ง) ไม่ถูกแตะเลย
+   ไม่ใช้ requestFullscreen() (Q4b — iOS Safari มีปัญหากับ modal/คีย์บอร์ด) */
+body.sp-zen {
+    overflow: hidden;
+}
+
+body.sp-zen #quiz-container {
+    /* ความกว้างที่การ์ดใช้อยู่ตอนไม่ Zen — ต้องเท่าเดิมเป๊ะ ไม่งั้นข้อความ reflow
+       ใต้ลายเส้นที่อยู่กับที่ (ลายเส้น normalize ด้วยความกว้าง anchor)
+       ค่าจริง setZenMode() วัดจาก #quiz-card-wrapper ก่อนเข้า Zen แล้ว set เป็น inline custom property
+       (สายความกว้าง .container → #quiz-container → wrapper ซ้อนหลายชั้น เขียนสูตรตายตัวใน CSS พลาดง่าย)
+       ค่าข้างล่างเป็น fallback เฉพาะกรณี JS ไม่ได้ set */
+    --sp-zen-w: min(860px, 100%);
+
+    box-sizing: border-box;
+    position: fixed;
+    inset: 0;
+    z-index: var(--zi-zen);
+    /* base rule เป็น overflow: hidden (ทั้งสองแกน) — ต้องเขียนแยกแกน ไม่พึ่ง shorthand */
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    /* จัดกึ่งกลางด้วย padding ของ container — ห้ามใช้ margin:auto ที่ wrapper
+       (แกนขวางของ flex column จะยกเลิก align-items:stretch แล้ว wrapper หดเท่าเนื้อหา) */
+    padding-inline: var(--sp-zen-pad, max(0px, calc((100% - var(--sp-zen-w)) / 2)));
+    padding-top: env(safe-area-inset-top);
+    /* พื้นที่ว่างท้ายการ์ดไว้คิดเลข */
+    padding-bottom: 60vh;
+}
+
+/* ซ่อนเฉพาะ chrome รอบการ์ด (blacklist ไม่ใช่ whitelist — display:revert จะทิ้ง
+   inline display:none ที่ JS ตั้งไว้ให้ #similar-panel/#discussion-panel)
+   ที่อยู่นอก <main> ไม่ต้องซ่อน เพราะ overlay ทึบทับหมดแล้ว
+   เก็บไว้: #feedback, #quiz-explain-container, .nav-container — ไม่งั้นตอบเสร็จแล้ว
+   ดูเฉลยหรือไปข้อถัดไปไม่ได้ ต้องออกจาก Zen ก่อน */
+body.sp-zen #quiz-container > h1,
+body.sp-zen #quiz-container > #question-index-panel,
+body.sp-zen #quiz-container > #vote-notification-bar,
+body.sp-zen #quiz-container > #report-notification-bar,
+body.sp-zen #quiz-container > .category-header-wrap,
+body.sp-zen #quiz-container > #glossary-tap-hint,
+body.sp-zen #quiz-container > #similar-panel,
+body.sp-zen #quiz-container > #discussion-panel,
+body.sp-zen #quiz-container > #quiz-action-row,
+body.sp-zen #quiz-container > span {
+    display: none !important;
+}
+
+/* เดสก์ท็อป: ตรึง toolbar ไว้บนสุดของกล่อง scroll — เลื่อนอ่านลงไปแล้วปุ่มออกยังอยู่ */
+@media (min-width: 768px) {
+    body.sp-zen #scratchpad-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+}
+
+/* จอเล็ก: toolbar เป็น position:fixed อยู่แล้ว → ไม่โดน overflow ของ overlay ตัด
+   (fixed ไม่ผูก containing block กับ ancestor ที่เป็น fixed)
+   แต่แถวเครื่องมือ scroll แนวนอนได้ และปุ่ม Zen อยู่ท้ายสุด → จอ 390px ปุ่มออกจะหลุดนอกจอ
+   ตรึงไว้ขอบขวาเฉพาะตอนอยู่ใน Zen เพื่อให้กดออกได้เสมอ */
+@media (max-width: 767px) {
+    body.sp-zen #scratchpad-toolbar .sp-row-tools [data-sp-act="zen"] {
+        position: sticky;
+        right: 0;
+        z-index: 1;
+        background: var(--color-surface);
+        box-shadow: -10px 0 10px -4px var(--color-surface);
+    }
+}

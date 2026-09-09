@@ -71,6 +71,7 @@
 
         /* Z-Index */
         --zi-fab: 100;
+        --zi-zen: 500;
         --zi-modal-card: 1000;
         --zi-report-card: 1100;
         --zi-overlay: 9999;
